@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GradeOdds</title>
+<meta name="description" content="Scan a Pokémon card and see its estimated PSA, BGS and CGC grade, the odds of each grade, recent prices and whether it's worth submitting.">
+<meta name="theme-color" content="#141a2b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GradeOdds">
+<meta property="og:title" content="GradeOdds">
+<meta property="og:description" content="Is your Pokémon card worth grading? Scan it and find out.">
+<style>html{color-scheme:light dark}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a phone-sized app shell centered on desktop, full-bleed on a real phone; bottom tab bar drives the screens. */
+:root{
+  --bg:#e9edf3; --surface:#ffffff; --sunk:#f3f5f9; --ink:#141a2b; --muted:#5d6680; --line:#d8dde8;
+  --accent:#2b4cff; --accent-ink:#ffffff; --good:#0f8a5f; --warn:#b26a00; --bad:#c2362b;
+  --foil:linear-gradient(115deg,#ffd36e 0%,#ff8fb1 25%,#9d8cff 50%,#5fd4ff 75%,#a8ff9e 100%);
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Figtree",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0b0e17; --surface:#151a28; --sunk:#1c2234; --ink:#eef1f8; --muted:#97a0b8; --line:#2a3148;
+  --accent:#7c93ff; --accent-ink:#0b0e17; --good:#3fd29b; --warn:#f0b04a; --bad:#ff7a6e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0b0e17; --surface:#151a28; --sunk:#1c2234; --ink:#eef1f8; --muted:#97a0b8; --line:#2a3148;
+  --accent:#7c93ff; --accent-ink:#0b0e17; --good:#3fd29b; --warn:#f0b04a; --bad:#ff7a6e; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
+.wrap{display:flex;gap:32px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+.note{max-width:300px;min-width:0;padding-top:12px}
+.note h1{font-family:var(--display);font-weight:800;font-size:30px;line-height:1.05;margin:0 0 10px;text-wrap:balance}
+.note p{color:var(--muted);margin:0 0 10px}
+.tag{display:inline-block;font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px 8px;border-radius:6px;background:var(--sunk);color:var(--warn);border:1px solid var(--line)}
+.phone{width:390px;max-width:100%;height:780px;max-height:calc(100vh - 40px);min-height:600px;background:var(--surface);border:1px solid var(--line);border-radius:34px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 30px 60px -30px rgba(20,26,43,.35)}
+@media (max-width:460px){.phone{border-radius:0;border:0;height:100dvh;max-height:none;box-shadow:none}body{padding:0}}
+.top{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 10px}
+.brand{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.brand i{width:18px;height:24px;border-radius:4px;background:var(--foil);display:inline-block;transform:rotate(-8deg)}
+.scans{font:600 12px var(--mono);color:var(--muted)}
+.screen{flex:1;overflow-y:auto;padding:4px 20px 20px;display:flex;flex-direction:column;gap:16px}
+.screen[hidden]{display:none!important}
+.screen>*{flex-shrink:0}
+h2{font-family:var(--display);font-weight:600;font-size:20px;margin:6px 0 0;letter-spacing:-.01em}
+h3{font-family:var(--display);font-weight:600;font-size:16px;margin:0}
+.lbl{font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pro{font:700 9px var(--mono);letter-spacing:.08em;padding:2px 5px;border-radius:4px;background:var(--accent);color:var(--accent-ink);vertical-align:middle}
+.btn{font:700 15px var(--body);border:0;border-radius:14px;padding:14px 16px;cursor:pointer;background:var(--accent);color:var(--accent-ink);width:100%}
+.btn.ghost{background:var(--sunk);color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.scanbtn{position:relative;border-radius:20px;padding:22px 18px;text-align:left;background:var(--ink);color:var(--surface);border:0;cursor:pointer;overflow:hidden;font-family:var(--body)}
+.scanbtn::after{content:"";position:absolute;inset:auto -30% -60% 40%;height:160%;background:var(--foil);opacity:.55;filter:blur(18px);transform:rotate(-15deg)}
+.scanbtn b{font-family:var(--display);font-size:24px;display:block;position:relative;z-index:1}
+.scanbtn span{position:relative;z-index:1;opacity:.8;font-size:14px}
+.total{display:flex;justify-content:space-between;align-items:baseline;padding:14px 16px;background:var(--sunk);border-radius:14px}
+.total strong{font:700 24px var(--mono)}
+.list{display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);background:none;border-left:0;border-right:0;border-top:0;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}
+.thumb{width:44px;height:60px;border-radius:5px;background:var(--foil);position:relative;border:3px solid #f2d36b;flex-shrink:0}
+.thumb::after{content:"";position:absolute;inset:8px 4px 18px;background:rgba(255,255,255,.55);border-radius:2px}
+img.thumb.real{object-fit:cover;border:0;background:none;display:block}
+img.thumb.real::after{content:none}
+.head{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center}
+.head>div{min-width:0}
+.hero{width:96px;height:134px;border-radius:8px;background:var(--foil);border:3px solid #f2d36b;display:block;flex-shrink:0}
+img.hero.real{object-fit:cover;border:0;box-shadow:0 6px 18px -6px rgba(0,0,0,.45)}
+.row .nm{font-weight:600;min-width:0}
+.row .st{color:var(--muted);font-size:13px}
+.pill{font:700 12px var(--mono);padding:4px 8px;border-radius:999px;background:var(--sunk);border:1px solid var(--line);white-space:nowrap}
+.pill.g{color:var(--good)} .pill.w{color:var(--warn)} .pill.b{color:var(--bad)}
+.money{font:700 14px var(--mono);text-align:right}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border-radius:12px;padding:3px;gap:3px}
+.seg button{border:0;border-radius:10px;padding:9px;font:700 14px var(--body);background:none;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.stage{position:relative;width:100%;aspect-ratio:63/88;max-width:100%;border-radius:12px;overflow:hidden;background:var(--sunk);border:1px dashed var(--line)}
+.stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;background:#111}
+.fake{position:absolute;inset:0;padding:6% 8% 8% 5%;background:#f2d36b}
+.fake.back{background:#2e5aa8;padding:5% 6% 5% 6%}
+.fake div{width:100%;height:100%;border-radius:6px;background:var(--foil);display:flex;align-items:flex-end;padding:10px;font:700 12px var(--mono);color:#141a2b}
+.fake.back div{background:#1d3f7a;color:#cfe0ff;align-items:center;justify-content:center}
+.stage{touch-action:none;user-select:none;-webkit-user-select:none}
+.guide{position:absolute;background:var(--accent);opacity:.95;pointer-events:none}
+.guide.v{top:0;bottom:0;width:2px;margin-left:-1px}.guide.h{left:0;right:0;height:2px;margin-top:-1px}
+.guide::after{content:"";position:absolute;width:22px;height:22px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.guide.v::after{left:-10px;top:50%;margin-top:-11px}.guide.h::after{top:-10px;left:50%;margin-left:-11px}
+.guide.v#gL::after{top:35%}.guide.v#gR::after{top:65%}.guide.h#gT::after{left:35%}.guide.h#gB::after{left:65%}
+.guide.drag{opacity:1;background:var(--good)}.guide.drag::after{background:var(--good);transform:scale(1.2)}
+.stage.grab{cursor:grabbing}
+.qc{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--sunk);font-size:13px;line-height:1.4}
+.qc b{display:block}.qc.ok b{color:var(--good)}.qc.warn b{color:var(--warn)}.qc.bad b{color:var(--bad)}
+.auto{margin:0;padding:10px 12px;border-radius:12px;border:1px solid var(--accent);font-size:13px;line-height:1.4;color:var(--ink)}
+.sliders{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.sliders label,.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+select,input[type=search],input[type=number].wide{font:600 15px var(--body);padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);width:100%;-webkit-appearance:none}
+.hits{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.hits:empty{display:none}
+.hit{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;border:0;border-bottom:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}
+.hit:last-child{border-bottom:0}
+.hit b{font-weight:600}.hit small{color:var(--muted);font-size:12px;grid-column:1}
+.hit .no{font:600 12px var(--mono);color:var(--muted);grid-row:1/3;align-self:center}
+.sel{display:none;padding:10px 12px;border-radius:12px;background:var(--sunk);font-size:14px;color:var(--ink)}
+.sel.on{display:block}.sel small{color:var(--muted);display:block;font-size:12px}
+.cen{display:flex;gap:10px}
+.cen>div{flex:1;background:var(--sunk);border-radius:12px;padding:10px 12px}
+.cen strong{font:700 18px var(--mono);display:block}
+.grades{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.slab{border:1px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center;background:var(--surface);cursor:pointer;color:inherit;font:inherit}
+.slab .co{font:700 11px var(--mono);letter-spacing:.08em;color:var(--muted)}
+.slab .gr{font-family:var(--display);font-weight:800;font-size:32px;line-height:1.1}
+.slab .nm{font-size:11px;color:var(--muted)}
+.slab[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.slab[aria-pressed="true"] .co,.slab[aria-pressed="true"] .nm{color:inherit;opacity:.7}
+.odds{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
+.odds>div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+.odds .ob{width:100%;background:var(--sunk);border-radius:8px 8px 4px 4px;position:relative;height:64px;display:flex;align-items:flex-end}
+.odds .ob i{display:block;width:100%;background:var(--line);border-radius:8px 8px 4px 4px}
+.odds .on .ob i{background:var(--accent)}
+.odds b{font:700 15px var(--mono);color:var(--ink)}
+.sub{display:flex;flex-direction:column}
+.bar{display:grid;grid-template-columns:76px 1fr 36px;gap:10px;align-items:center;font-size:14px}
+.bar .tr{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.bar .tr i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.bar b{font:700 13px var(--mono);text-align:right}
+details{border-bottom:1px solid var(--line);padding:8px 0}
+summary{list-style:none;cursor:pointer;position:relative;padding-right:20px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";position:absolute;right:0;top:-2px;font:700 16px var(--mono);color:var(--muted)}
+details[open] summary::after{content:"−"}
+details p{margin:8px 0 4px;font-size:13.5px;color:var(--muted);line-height:1.5}
+details p b{color:var(--ink)}
+.box{display:flex;flex-direction:column;gap:8px;background:var(--sunk);border-radius:14px;padding:14px 16px}
+.box p{margin:0;font-size:14px;line-height:1.5}
+.box dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:14px}
+.box dt{color:var(--muted)} .box dd{margin:0;font-weight:600}
+.fmap{position:relative;width:100%;aspect-ratio:63/88;border-radius:12px;overflow:hidden;background:var(--sunk)}
+.fmap img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#111}
+.mk{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--bad);color:#fff;font:700 13px var(--mono);display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer}
+.mk.c{background:var(--warn)}
+.mk.z{background:var(--accent)}
+.flaws{display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.flaws div{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start}
+.flaws span.n{width:20px;height:20px;border-radius:50%;background:var(--bad);color:#fff;font:700 11px var(--mono);display:flex;align-items:center;justify-content:center}
+.flaws span.n.c{background:var(--warn)}.flaws span.n.z{background:var(--accent)}
+.std{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.std th{text-align:left;font:700 11px var(--mono);letter-spacing:.06em;color:var(--muted);padding:4px 0;border-bottom:1px solid var(--line)}
+.std td{padding:5px 0;border-bottom:1px solid var(--line)}
+.std td:not(:first-child){font:600 13px var(--mono)}
+.std tr.on td{color:var(--accent)}
+table.px{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.px td{padding:9px 0;border-bottom:1px solid var(--line)} .px td:last-child{text-align:right;font:700 14px var(--mono)}
+.px tr.hl td{color:var(--accent)}
+.verdict{border-radius:14px;padding:14px 16px;border:1px solid var(--line);background:var(--sunk)}
+.verdict strong{display:block;font-size:17px}
+.verdict.yes strong{color:var(--good)} .verdict.no strong{color:var(--bad)} .verdict.maybe strong{color:var(--warn)}
+.calc{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.calc .field{gap:4px}
+.calc input[type=number]{font:700 15px var(--mono);padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);width:100%}
+.ev{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:13.5px;font-variant-numeric:tabular-nums}
+.ev span:not(:first-child){font:600 13px var(--mono);text-align:right}
+.ev .h{color:var(--muted);font:700 11px var(--mono);letter-spacing:.06em}
+.fine{font-size:12px;color:var(--muted)}
+.plans{display:flex;flex-direction:column;gap:10px}
+.plan{border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;grid-template-columns:1fr auto;gap:2px 10px;cursor:pointer;background:var(--surface);color:inherit;font:inherit;text-align:left;width:100%}
+.plan[aria-pressed="true"]{border:2px solid var(--accent)}
+.plan .p{font:700 16px var(--mono)}
+.plan small{color:var(--muted);grid-column:1/-1}
+.tabs{display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--line);padding:6px 2px calc(8px + env(safe-area-inset-bottom,0px))}
+.tabs button{background:none;border:0;color:var(--muted);font:600 10.5px var(--body);padding:8px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;border-radius:10px}
+.trow{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--line)}
+.trow .nm{font-weight:600;min-width:0}.trow .st{color:var(--muted);font-size:12px;font-weight:400}
+.trow .why{font-size:13px;color:var(--muted);margin:4px 0 6px;line-height:1.45;grid-column:2/4}
+.sig{display:flex;flex-wrap:wrap;gap:4px;grid-column:2/4}
+.sig span{font:600 11px var(--mono);padding:3px 7px;border-radius:6px;background:var(--sunk);border:1px solid var(--line);color:var(--muted)}
+.sig span.up{color:var(--good)}.sig span.dn{color:var(--bad)}.sig span.wn{color:var(--warn)}
+.vd{font:700 12px var(--mono);padding:4px 9px;border-radius:999px;white-space:nowrap;color:#fff}
+.vd.buy{background:var(--good)}.vd.hold{background:var(--warn)}.vd.avoid{background:var(--bad)}
+code{font:600 12px var(--mono)}
+.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
+.tabs button[aria-current="true"]{color:var(--accent)}
+.spin{display:flex;flex-direction:column;align-items:center;gap:14px;padding:60px 0;text-align:center;color:var(--muted)}
+.spin i{width:56px;height:76px;border-radius:8px;background:var(--foil);animation:flip 1s ease-in-out infinite}
+@keyframes flip{50%{transform:rotateY(180deg)}}
+@media (prefers-reduced-motion:reduce){.spin i{animation:none}}
+.file{position:relative}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.bucket{display:flex;flex-direction:column;gap:2px}
+.bucket h3{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0 2px}
+.bucket h3 small{font:600 12px var(--mono);color:var(--muted)}
+.subrow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.subrow small{color:var(--muted);font-size:12px;grid-column:1}
+.subrow select{grid-column:2;grid-row:1/3;width:auto;padding:6px 8px;font-size:13px;align-self:center}
+.stat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.stat>div{background:var(--sunk);border-radius:12px;padding:10px 12px}
+.stat strong{font:700 20px var(--mono);display:block}
+.stat span{font-size:11px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <div class="phone" role="application" aria-label="GradeOdds app prototype">
+    <div class="top">
+      <div class="brand"><i aria-hidden="true"></i>GradeOdds</div>
+      <div class="scans" id="scansLeft">3 free scans left today</div>
+    </div>
+
+    <!-- HOME -->
+    <section class="screen" id="s-home">
+      <button class="scanbtn" data-go="scan"><b>Scan a card</b><span>Front and back, flat, no sleeve glare</span></button>
+      <div class="total"><span class="lbl">Collection value</span><strong id="homeTotal">$0</strong></div>
+      <h2>Recent scans</h2>
+      <div class="list" id="recent"></div>
+    </section>
+
+    <!-- SCAN -->
+    <section class="screen" id="s-scan" hidden>
+      <h2>Line up the borders</h2>
+      <div class="seg" role="tablist"><button id="sideF" aria-pressed="true">Front</button><button id="sideB" aria-pressed="false">Back <span class="pro">PRO</span></button></div>
+      <p class="fine" style="margin:0" id="sideHint">Drag each slider until the blue line sits on the inner edge of the yellow border.</p>
+      <div class="stage" id="stage">
+        <div class="fake" id="fake"><div>Sample card · front</div></div>
+        <img id="photo" alt="Your card photo" hidden>
+        <span class="guide v" id="gL"></span><span class="guide v" id="gR"></span>
+        <span class="guide h" id="gT"></span><span class="guide h" id="gB"></span>
+      </div>
+      <p class="fine" style="margin:-8px 0 0">Drag a line by its handle, or use the sliders for fine control.</p>
+      <div class="sliders">
+        <label for="sl">Left border<input type="range" id="sl" min="1" max="20" step="0.5" value="5"></label>
+        <label for="sr">Right border<input type="range" id="sr" min="1" max="20" step="0.5" value="8"></label>
+        <label for="st">Top border<input type="range" id="st" min="1" max="20" step="0.5" value="6"></label>
+        <label for="sb">Bottom border<input type="range" id="sb" min="1" max="20" step="0.5" value="8"></label>
+      </div>
+      <div class="qc" id="qc" hidden></div>
+      <p class="auto" id="auto" hidden></p>
+      <div class="file"><button class="btn ghost" tabindex="-1" id="upBtn">Upload a front photo</button><input type="file" id="upload" accept="image/*" aria-label="Upload a card photo"></div>
+      <button class="btn ghost" id="realign" hidden>Auto-align borders again</button>
+      <div class="cen">
+        <div><span class="lbl">Front L/R · T/B</span><strong id="cF">38/62 · 43/57</strong></div>
+        <div><span class="lbl">Back L/R · T/B</span><strong id="cB">46/54 · 46/54</strong></div>
+      </div>
+      <div class="field"><label for="cardQ">Which card is this? Search by name, set or number</label>
+        <input id="cardQ" type="search" placeholder="e.g. Charizard 223, Umbreon VMAX, Base Set Pikachu" autocomplete="off">
+        <div id="cardHits" class="hits" role="listbox" aria-label="Matching cards"></div>
+        <div id="cardSel" class="sel"></div></div>
+      <button class="btn" id="analyze">Estimate grade</button>
+    </section>
+
+    <!-- RESULT -->
+    <section class="screen" id="s-result" hidden></section>
+
+    <!-- BATCH -->
+    <section class="screen" id="s-batch" hidden>
+      <h2>Batch mode <span class="pro">PRO</span></h2>
+      <p style="margin:0;color:var(--muted)">Scan a stack and let the app sort it. Each card gets a quick grade estimate and an expected value after fees, then lands in one of three piles.</p>
+      <div class="calc"><div class="field"><label for="bFee">Fee per card $</label><input type="number" id="bFee" value="25" min="0"></div><div class="field"><label for="bCo">Company</label><select id="bCo"><option value="psa">PSA</option><option value="bgs">BGS</option><option value="cgc">CGC</option></select></div></div>
+      <button class="btn" id="runBatch">Scan a sample stack of 12</button>
+      <div id="batchOut"></div>
+    </section>
+
+    <!-- TRENDS -->
+    <section class="screen" id="s-trends" hidden>
+      <h2>Market trends <span class="pro">PRO</span></h2>
+      <div class="box"><span class="lbl">Market pulse · week ending Oct 14, 2026</span>
+        <div class="stat"><div><strong>+1.3%</strong><span>tracked cards $5+</span></div><div><strong>32%</strong><span>rose</span></div><div><strong>27%</strong><span>fell</span></div></div>
+        <p><b>Gaining:</b> older-era sets. HGSS Promos +15.9%, Secret Wonders +13.2%, EX Power Keepers +9.2%, DP Promos +8.6%, Platinum +8.1%. Latias +14.3% and Latios +13.6% were the biggest Pokémon gainers.</p>
+        <p><b>Pulling back:</b> Plasma Storm −9.6%, ME Ascended Heroes −7.8%, Aquapolis −6.8%, Destined Rivals −6.5%, Prismatic Evolutions −4.0%. Lugia fell 10.4%. Newer Scarlet & Violet sets are still settling as supply reaches the market.</p>
+        <p class="fine" style="margin:0">Source: Sunday Punch weekly digest, 10,592 tracked cards. Search-interest and population figures below are sample numbers; in the real app a nightly job pulls Google Trends, sold listings and pop reports into the database.</p></div>
+      <div class="seg" style="grid-template-columns:repeat(4,1fr)"><button data-tf="all" aria-pressed="true">All</button><button data-tf="buy" aria-pressed="false">Buy</button><button data-tf="hold" aria-pressed="false">Hold</button><button data-tf="avoid" aria-pressed="false">Avoid</button></div>
+      <div id="trendList"></div>
+      <div class="box"><span class="lbl">How the score works</span>
+        <p>Each card gets a score from five signals: search interest (90-day change), price (30-day change), PSA 10 population growth, reprint risk and era. Rising attention with a flat price and slow pop growth scores highest. Attention spiking while the price has already run and pops are doubling scores lowest; that is hype you'd be buying at the top. Vintage gets a small bonus because supply can't grow.</p>
+        <p class="fine" style="margin:0">Speculation, not financial advice. Card prices can fall fast, and a reprint announcement can halve a modern card overnight. The numbers behind each verdict live in the <code>TRENDS</code> list in the page script, so you can change them.</p></div>
+    </section>
+
+    <!-- COLLECTION -->
+    <section class="screen" id="s-collection" hidden>
+      <h2>My collection</h2>
+      <div class="seg"><button id="colCards" aria-pressed="true">Cards</button><button id="colSubs" aria-pressed="false">Submissions</button></div>
+      <div id="colPaneCards">
+        <div class="total"><span class="lbl">Raw value</span><strong id="colTotal">$0</strong></div>
+        <div class="list" id="colList"></div>
+      </div>
+      <div id="colPaneSubs" hidden>
+        <div class="stat" id="subStats"></div>
+        <p class="fine" style="margin:8px 0 0">When a slab comes back, set the real grade. The app compares it to its own estimate, which is how it learns where it runs hot or cold.</p>
+        <div id="subList"></div>
+      </div>
+    </section>
+
+    <!-- PRO -->
+    <section class="screen" id="s-pro" hidden>
+      <h2>Go Pro</h2>
+      <p style="margin:0;color:var(--muted)">Free gets 3 front-only scans a day. Pro is for people deciding what to submit.</p>
+      <div class="plans" id="plans">
+        <button class="plan" aria-pressed="false"><span>Free</span><span class="p">$0</span><small>3 scans a day · front only · prices · collection up to 50</small></button>
+        <button class="plan" aria-pressed="true"><span><b>Pro monthly</b></span><span class="p">$6.99/mo</span><small>Unlimited scans · back-of-card check · flaw map · calculator · tracker · alerts</small></button>
+        <button class="plan" aria-pressed="false"><span>Pro yearly</span><span class="p">$49.99/yr</span><small>Same as monthly, about 40% less</small></button>
+        <button class="plan" aria-pressed="false"><span>Dealer</span><span class="p">$24.99/mo</span><small>Everything in Pro · batch mode · CSV export · bulk listing</small></button>
+        <button class="plan" aria-pressed="false"><span>Scan pack</span><span class="p">$4.99</span><small>25 scans that never expire</small></button>
+      </div>
+      <button class="btn" id="subscribe">Start 7-day free trial</button>
+      <p class="fine" id="subMsg">Prices are placeholders for testing. In a real app, payment runs through the App Store and Google Play.</p>
+      <p class="fine"><a href="privacy.html" style="color:inherit">Privacy</a> · Not affiliated with PSA, Beckett, CGC or The Pokémon Company. Estimates are a screening tool, not a promise of a grade.</p>
+    </section>
+
+    <nav class="tabs" aria-label="App sections">
+      <button data-go="home" aria-current="true"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+      <button data-go="scan"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="7" width="8" height="10" rx="1"/></svg>Scan</button>
+      <button data-go="batch"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="10" height="14" rx="1.5"/><path d="M7 4h10a2 2 0 0 1 2 2v12M11 2h8a2 2 0 0 1 2 2v12"/></svg>Batch</button>
+      <button data-go="trends"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>Trends</button>
+      <button data-go="collection"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="11" height="15" rx="1.5"/><path d="M8 3h10a2 2 0 0 1 2 2v13"/></svg>Collection</button>
+      <button data-go="pro"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>Pro</button>
+    </nav>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// SAMPLE CARDS. Prices are made up for the prototype. Card facts are real.
+// =====================================================================
+// Card images bundled with the prototype (from images.pokemontcg.io, the open Pokémon TCG dataset).
+// A real app would load every card from that server by id: https://images.pokemontcg.io/<set>/<number>.png
+const IMG = {};
+["sv3-223","swsh7-215","base1-58","sv3pt5-205","swsh7-218","swsh8-271","swsh12-186","swsh11-186","sv3pt5-150","swsh7-205","sv1-245","swsh7-209"].forEach(id => IMG[id] = "img/"+id+".jpg");
+const BATCH_IDS = ["sv3-223","swsh7-215","base1-58","sv3pt5-205","swsh7-218","swsh8-271","swsh12-186","swsh11-186","sv3pt5-150","swsh7-205","sv1-245","swsh7-209"];
+
+const CARDS = [
+  {id:"char", tcg:"sv3-223", name:"Charizard ex", set:"Obsidian Flames · 223/197", rarity:"Special Illustration Rare", artist:"Akira Egawa", released:"August 11, 2023 (English)",
+   raw:72, psa9:118, psa10:310, bgs95:150, cgc10:190, sub:{corners:9.5,edges:9,surface:9},
+   history:"The chase card of Obsidian Flames, the third Scarlet & Violet expansion. It shows Charizard as a Darkness-type Tera Pokémon, a Scarlet & Violet mechanic where a Pokémon takes on a crystal form of a different type. Special Illustration Rares are the top tier of textured full-art cards in this era and pull at roughly one in 190 packs. Charizard has anchored Pokémon card values since the 1999 Base Set holo, so every new premium Charizard inherits that demand, and this one became the most graded card in the set.",
+   artistNote:"Akira Egawa has illustrated well over a hundred Pokémon cards and is one of the most sought-after artists for Special Illustration Rares. The style is painterly and atmospheric, with soft lighting and full scenes rather than a character on a plain background.",
+   watch:"The raised texture on SIRs hides light scratches but shows dents and holo peeling. Check the embossed areas under angled light, and look at the back edges for whitening, since the dark back border shows it clearly."},
+  {id:"umb", tcg:"swsh7-215", name:"Umbreon VMAX", set:"Evolving Skies · 215/203", rarity:"Alternate Art Secret Rare", artist:"Keiichiro Ito", released:"August 27, 2021 (English) · May 28, 2021 (Japan, Eevee Heroes)",
+   raw:1150, psa9:1500, psa10:3600, bgs95:2100, cgc10:2300, sub:{corners:9,edges:9.5,surface:8.5},
+   history:"Nicknamed \"Moonbreon\" by collectors, this is the most valuable modern English Pokémon card. It first appeared in Japan's Eevee Heroes set and reached English three months later in Evolving Skies, a set built around the Eevee evolutions. The alternate art shows Umbreon curled on a rooftop under a full moon. It has never been reprinted in either language, no official pull rate was ever published, and the Japanese secondary market priced it high from the start. Despite the price, about 69% of graded copies have come back PSA 10, so condition matters more than rarity for this card's value.",
+   artistNote:"Keiichiro Ito paints narrative alternate arts with strong lighting and mood, and several of his Evolving Skies cards (Umbreon, Rayquaza, Glaceon) are the most valuable in the set.",
+   watch:"Collectors widely report print lines and holo scratches on Evolving Skies alternate arts straight from the pack, plus silvering on the edges. A print line that runs the full height of the holo is a factory defect and usually keeps the card at a 9 or lower."},
+  {id:"pika", tcg:"base1-58", name:"Pikachu", set:"Base Set · 58/102", rarity:"Common", artist:"Mitsuhiro Arita", released:"January 9, 1999 (English) · October 20, 1996 (Japan)",
+   raw:9, psa9:55, psa10:420, bgs95:110, cgc10:160, sub:{corners:8,edges:8.5,surface:8.5},
+   history:"The original English Pikachu from the first English Pokémon set. The Japanese art has yellow cheeks, but Wizards of the Coast recolored them red for the first English printing. Both versions exist in the 1st Edition and Shadowless print runs, roughly a 50/50 split, and the Unlimited run has only yellow cheeks. The red cheeks are often called an error, but Wizards made the change on purpose and later restored yellow. A red-cheeked copy with a gold E3 stamp, handed out at the 1999 E3 show, was the first English promo card. The 1st Edition red-cheek version is the one collectors chase.",
+   artistNote:"Mitsuhiro Arita illustrated the original 1996 Japanese Base Set, including Charizard and Pikachu, and is still drawing Pokémon cards today. His early watercolor-and-marker style defined the look of the first generation of cards.",
+   watch:"1999 Wizards print runs are often off-center, and a true 50/50 cut is uncommon. The yellow borders show every bit of edge wear, and the back corners on many copies were soft straight from the pack. Common cards like this were played with, so surface scuffs are the usual problem."},
+  {id:"mew", tcg:"sv3pt5-205", name:"Mew ex", set:"Scarlet & Violet 151 · 205/165", rarity:"Hyper Rare (gold)", artist:"aky CG Works", released:"September 22, 2023 (English)",
+   raw:48, psa9:70, psa10:165, bgs95:95, cgc10:110, sub:{corners:10,edges:9.5,surface:9.5},
+   history:"151 revisited the original Kanto Pokédex in National Dex order and became one of the best-selling sets of the Scarlet & Violet era. Mew is the set's mascot, and this gold etched Hyper Rare is the rarest English version of the card. Its Special Illustration Rare, painted by Natsumi Yoshida, exists in Japanese and as an English promo, not in the English set. The set's nostalgia pull made it one of the most graded sets of 2023 and 2024.",
+   artistNote:"aky CG Works is a 3D computer-graphics studio rather than a single painter. Its rendered style appears on many Pokémon ex cards in the Scarlet & Violet era, including the regular and full-art versions of this Mew.",
+   watch:"Gold etched cards show hairline scratches very easily under direct light, and the foil picks up fingerprints. Surface is the usual reason a gold card misses a 10, so check it tilted under a lamp before submitting."},
+];
+
+// =====================================================================
+// GRADING STANDARDS. Front/back centering limits by grade, from each
+// company's published scale. "front"/"back" = the larger side of the worst ratio.
+// =====================================================================
+const PSA_CENTER = [[10,55,75],[9,60,90],[8,65,90],[7,70,95],[6,80,90]];
+const BGS_CENTER = [[10,50,55],[9.5,55,60],[9,60,65],[8.5,65,70],[8,70,75],[7,75,80]];
+const CGC_CENTER = [[10,55,75],[9.5,55,60],[9,60,65],[8.5,65,70],[8,65,70],[7,70,80]];
+function capFrom(table, front, back){
+  for(const [g,f,b] of table) if(front<=f && back<=b) return g;
+  return table[table.length-1][0]-1;
+}
+
+// Submission tiers. PLACEHOLDER fees and turnaround; every company changes these often. Edit freely.
+const TIERS = {
+  psa:[{n:"Value Plus (paused)",fee:40,days:65,max:499},{n:"Regular",fee:75,days:20,max:1499},{n:"Express",fee:150,days:10,max:2499}],
+  bgs:[{n:"Standard",fee:30,days:30,max:999},{n:"Express",fee:75,days:10,max:2499}],
+  cgc:[{n:"Bulk (25+ cards)",fee:12,days:30,max:499},{n:"Standard",fee:18,days:20,max:999},{n:"Express",fee:45,days:5,max:2499}],
+};
+
+// How each company reads the three condition areas (sample descriptions keyed to the score).
+const AREA_TEXT = {
+  Corners:{
+    10:"All four corners are perfectly sharp with no whitening, even under 10x magnification. This meets every company's top standard.",
+    9.5:"Three corners are perfectly sharp. One shows a pinpoint of softness only under magnification. PSA still allows a 10 here if nothing else is wrong; Beckett would subgrade it 9.5.",
+    9:"One corner has slight whitening on the tip that you can see with the naked eye. PSA's Mint 9 allows exactly this kind of single minor flaw. CGC calls it \"four sharp corners with only minor visible wear.\"",
+    8.5:"Two corners show light softening. Still sharp at arm's length, but visible under magnification.",
+    8:"Two corners have visible fraying or whitening. PSA's NM-MT 8 wording allows \"slight fraying on one or two corners,\" so this is where the card lands.",
+    7:"Three or four corners show fraying. This is Near Mint territory at every company.",
+  },
+  Edges:{
+    10:"No chipping or whitening on any edge, front or back, under magnification.",
+    9.5:"A single pinpoint of whitening on one back edge. Not visible without a loupe.",
+    9:"Light whitening along one edge, the kind left by the factory cutting blade. CGC allows \"slight minor flaws\" for a 9; PSA allows one minor flaw.",
+    8.5:"Whitening along two edges, visible to the naked eye on a dark border.",
+    8:"Whitening or small chips on two or more edges. CGC describes NM-MT 8 edges as \"relatively smooth, with only minor touches of wear.\"",
+    7:"Rough or chipped edges along most of one side.",
+  },
+  Surface:{
+    10:"Clean holofoil with full original gloss, no scratches, print lines, dents, or ink spots.",
+    9.5:"One faint hairline scratch that only shows when the card is tilted under a light. PSA's Gem Mint 10 includes an allowance for a slight print imperfection, so this does not block a 10 by itself.",
+    9:"A short print line or a couple of light holo scratches. CGC's Mint 9 allows \"a small number of specks, or one minor spot or defect\" with gloss intact.",
+    8.5:"A visible print line or several light scratches across the holo. Eye appeal is still good from the front, but a grader will see it at once. This is usually the area that keeps a card out of the 9 range.",
+    8:"Scratches, a small dent, or a print defect visible at arm's length. Gloss is intact but the flaw is obvious.",
+    7:"Multiple scratches or a crease-free dent that disrupts the holo. Surface wear is the defining flaw.",
+  },
+};
+function areaText(area, v){ const ks = Object.keys(AREA_TEXT[area]).map(Number).sort((a,b)=>b-a); return AREA_TEXT[area][ks.find(k => v>=k) ?? 7]; }
+
+// =====================================================================
+// GRADE ESTIMATE. Each company's rule is written out so you can see why.
+// =====================================================================
+function estimate(c, cen){
+  const sub = {Centering:cen.bgsSub, Corners:c.sub.corners, Edges:c.sub.edges, Surface:c.sub.surface};
+  const low = Math.min(c.sub.corners, c.sub.edges, c.sub.surface);
+  const lowArea = Object.entries(sub).filter(([k])=>k!=="Centering").sort((a,b)=>a[1]-b[1])[0][0];
+
+  const psaCap = capFrom(PSA_CENTER, cen.front, cen.back);
+  // PSA 10 is "virtually perfect": a flaw visible only under magnification (9.5) does not block it.
+  const psaCond = Math.min(...[c.sub.corners, c.sub.edges, c.sub.surface].map(v => v>=9.5 ? 10 : Math.floor(v)));
+  const psa = Math.min(psaCap, psaCond);
+  const capped = psa===psaCap && psa<psaCond;
+  const psaWhy = capped
+    ? `Centering is the limit. The front measures ${cen.front}/${100-cen.front} on its worst axis and the back is within ${cen.back}/${100-cen.back}. PSA's limit for a ${psa+1} is ${PSA_CENTER.find(r=>r[0]===psa+1)?.[1] ?? 55}/${100-(PSA_CENTER.find(r=>r[0]===psa+1)?.[1] ?? 55)} front and ${PSA_CENTER.find(r=>r[0]===psa+1)?.[2] ?? 75}/${100-(PSA_CENTER.find(r=>r[0]===psa+1)?.[2] ?? 75)} back. Everything else on the card would support a ${psaCond}.`
+    : `${lowArea} is the limit. PSA does not add up the four areas; the weakest one sets the grade. ${lowArea} scored ${sub[lowArea]}, and PSA's ${psa===10?"Gem Mint 10 requires four perfectly sharp corners and full gloss with only a slight print allowance":psa===9?"Mint 9 allows one minor flaw such as a slight print imperfection or one touched corner":psa===8?"NM-MT 8 allows slight fraying on one or two corners or a minor print imperfection":"Near Mint 7 allows slight wear on several corners or surface wear on close inspection"}. Centering (${cen.front}/${100-cen.front} front, ${cen.back}/${100-cen.back} back) would have allowed a ${psaCap}.`;
+
+  const subs = Object.values(sub);
+  const bgsLow = Math.min(...subs);
+  const higher = subs.filter(v => v >= bgsLow + 1).length;
+  let bgs, bgsLabel, bgsWhy;
+  if(subs.every(v=>v===10)){ bgs=10; bgsLabel="Pristine · Black Label"; bgsWhy="All four subgrades are 10, including 50/50 centering. That is Beckett's Black Label, the rarest grade in the hobby."; }
+  else if(subs.filter(v=>v===10).length===3 && bgsLow===9.5){ bgs=10; bgsLabel="Pristine · Gold Label"; bgsWhy="Three subgrades are 10 and one is 9.5, which is Beckett's Gold Label 10: perfect to the naked eye with one imperfection under magnification."; }
+  else { bgs = higher>=2 ? bgsLow+0.5 : bgsLow; bgsLabel = bgs>=9.5?"Gem Mint":bgs>=9?"Mint":bgs>=8?"NM-MT":"Near Mint";
+    bgsWhy = `Subgrades: Centering ${sub.Centering}, Corners ${sub.Corners}, Edges ${sub.Edges}, Surface ${sub.Surface}. Beckett's final grade is driven by the lowest subgrade (${bgsLow}). ${higher>=2 ? `Because at least two other subgrades are a full point higher, the final grade rounds up half a point to ${bgs}.` : `The other subgrades are not far enough above it to pull the final grade up, so it stays at ${bgs}.`} Beckett's centering subgrade uses tighter limits than PSA: 50/50 for a 10 and 55/45 for a 9.5.`; }
+
+  const cgcCap = capFrom(CGC_CENTER, cen.front, cen.back);
+  let cgc, cgcLabel, cgcWhy;
+  if(low>=10 && cen.front<=52){ cgc=10; cgcLabel="Pristine 10"; cgcWhy="Every area is flawless and centering is essentially 50/50. CGC's Pristine 10 label is for cards flawless under 10x magnification."; }
+  else if(low>=9.5 && cen.front<=55 && cen.back<=75){ cgc=10; cgcLabel="Gem Mint 10"; cgcWhy=`Centering is within CGC's 55/45 front and 75/25 back limits for Gem Mint 10, and the only imperfection (${lowArea} at ${low}) is visible only under magnification. CGC's Gem Mint 10 is "an overall 10 where one criterion falls short of Pristine."`; }
+  else { cgc = Math.min(cgcCap, Math.floor(low*2)/2); cgcLabel = cgc>=9.5?"Mint+ 9.5":cgc>=9?"Mint 9":cgc>=8.5?"NM/Mint+ 8.5":cgc>=8?"NM/Mint 8":"Near Mint";
+    cgcWhy = cgc===cgcCap && cgc<low ? `Centering is the limit. The front is ${cen.front}/${100-cen.front}, and CGC requires 55/45 for a 10, 60/40 for a 9 and 65/35 for an 8.` :
+      `${lowArea} (${low}) sets the grade. CGC uses half-point steps, so a ${low} in one area lands the card at ${cgc} rather than rounding to a whole number. ${cgc>=9?"CGC's Mint 9 requires original gloss intact and allows one minor spot or defect.":"CGC's NM/Mint 8 allows one very minor flaw such as a few print spots or a slight diamond cut."}`; }
+
+  // Odds of each PSA grade. The centering cap is a hard ceiling; condition is a judgment call.
+  const conf = low>=9 && cen.front<=60 && cen.photoOk!==false ? "Medium" : "Low";
+  let pUp = (psa<10 && !capped) ? (conf==="Medium" ? 0.22 : 0.15) : (psa<10 ? 0.05 : 0);
+  let pDown = conf==="Medium" ? 0.2 : 0.35;
+  if(psa<=6) pDown = 0.15;
+  const odds = [[psa-1, pDown],[psa, 1-pUp-pDown],[psa+1, pUp]].filter(([g])=>g>=1&&g<=10);
+  const confWhy = conf==="Medium"
+    ? "The card has no obvious flaw, centering is well inside the limits and the photo passed the quality check. The remaining uncertainty is things a phone photo cannot settle: hairline surface scratches and corner softness under magnification."
+    : "At least one area is borderline, or the photo was hard to read. Graders make a judgment call on borderline flaws and on eye appeal, and PSA says a small centering variance may be allowed at the grader's discretion. Expect the real grade to land within one point either way.";
+  return {sub, low, lowArea, psa, psaCap, psaCond, capped, psaWhy, bgs, bgsLabel, bgsWhy, cgc, cgcLabel, cgcWhy, conf, confWhy, odds};
+}
+
+// Value of a card at a grade, per company. Sample multipliers off the PSA comps.
+function valueAt(c, co, g){
+  if(co==="psa") return g>=10 ? c.psa10 : g===9 ? c.psa9 : g===8 ? c.raw*1.25 : c.raw;
+  if(co==="bgs") return g>=10 ? c.psa10*1.35 : g>=9.5 ? c.bgs95 : g>=9 ? c.psa9*0.9 : c.raw*1.1;
+  return g>=10 ? c.cgc10 : g>=9.5 ? c.psa9*1.1 : g>=9 ? c.psa9*0.85 : c.raw*1.1;
+}
+function gradeFor(est, co){ return co==="psa" ? est.psa : co==="bgs" ? est.bgs : est.cgc; }
+// Expected value of submitting, using the PSA odds shifted onto the chosen company's grade.
+function expected(c, est, co, fee, ship){
+  const base = gradeFor(est, co);
+  const rows = est.odds.map(([g,p]) => { const gg = Math.min(10, base + (g - est.psa)); return {g:gg, p, v:valueAt(c, co, gg)}; });
+  const ev = rows.reduce((a,r) => a + r.p*r.v, 0) - fee - ship;
+  return {rows, ev, gain: ev - c.raw};
+}
+
+let collection = [ {id:"umb", psa:9}, {id:"mew", psa:10} ];
+let submissions = [ {id:"umb", co:"psa", est:9, actual:9, date:"Sep 2, 2026", tier:"Regular"}, {id:"mew", co:"psa", est:10, actual:9, date:"Sep 2, 2026", tier:"Regular"}, {id:"char", co:"cgc", est:9, actual:null, date:"Oct 9, 2026", tier:"Standard"} ];
+let scansLeft = 3, isPro = false;
+const $ = s => document.querySelector(s);
+const money = n => "$" + Math.round(n).toLocaleString("en-US");
+const EXTRA = {};
+const card = id => CARDS.find(c => c.id === id) || EXTRA[id];
+const COS = {psa:"PSA", bgs:"BGS", cgc:"CGC"};
+// Card art, or a foil placeholder when the prototype doesn't bundle that card's image.
+const thumb = (c, cls="thumb") => IMG[c.tcg] ? `<img class="${cls} real" src="${IMG[c.tcg]}" alt="${c.name}">` : `<span class="${cls}" aria-hidden="true"></span>`;
+
+// ---- Navigation ----
+function go(name){
+  if(name==="scan" && scansLeft<=0 && !isPro){ name = "pro"; }
+  document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-" + name);
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.go === name));
+  render();
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if(b) go(b.dataset.go); });
+
+// =====================================================================
+// SCAN SCREEN: front/back sides, sliders, photo upload with quality check.
+// =====================================================================
+const sides = { front:{L:5,R:8,T:6,B:8,photo:null,qc:null}, back:{L:6,R:7,T:6,B:7,photo:null,qc:null} };
+let side = "front";
+function ratio(a,b){ const l = Math.round(a/(a+b)*100); return [l, 100-l]; }
+function worst(s){ const lr = ratio(s.L,s.R), tb = ratio(s.T,s.B); return {lr, tb, w:Math.max(...lr, ...tb)}; }
+function setSide(s){
+  side = s; const d = sides[s];
+  $("#sideF").setAttribute("aria-pressed", s==="front"); $("#sideB").setAttribute("aria-pressed", s==="back");
+  $("#sl").value=d.L; $("#sr").value=d.R; $("#st").value=d.T; $("#sb").value=d.B;
+  $("#fake").className = "fake" + (s==="back" ? " back" : ""); $("#fake").firstElementChild.textContent = "Sample card · " + s;
+  $("#fake").hidden = !!d.photo; $("#photo").hidden = !d.photo; if(d.photo) $("#photo").src = d.photo;
+  $("#photo").style.objectFit = d.cropped ? "fill" : "contain";
+  $("#upBtn").textContent = d.photo ? `Replace the ${s} photo` : `Upload a ${s} photo`;
+  $("#realign").hidden = !d.orig;
+  const au = $("#auto"); if(d.auto){ au.hidden = false; au.textContent = d.auto; } else au.hidden = true;
+  $("#sideHint").textContent = s==="front" ? "Upload a photo and the app finds the borders itself. Then nudge any slider so the blue line sits on the inner edge of the yellow border." : "Flip the card and upload the back. The app finds the blue border; adjust if needed. PSA allows 75/25 here for a 10 and 90/10 for a 9.";
+  showQC(d.qc); readCentering();
+}
+$("#sideF").addEventListener("click", () => setSide("front"));
+$("#sideB").addEventListener("click", () => { if(!isPro && scansLeft<=0){ go("pro"); return; } setSide("back"); });
+function readCentering(){
+  const d = sides[side]; d.L=+$("#sl").value; d.R=+$("#sr").value; d.T=+$("#st").value; d.B=+$("#sb").value;
+  $("#gL").style.left = d.L+"%"; $("#gR").style.right = d.R+"%";
+  $("#gT").style.top = (d.T*63/88)+"%"; $("#gB").style.bottom = (d.B*63/88)+"%";
+  const f = worst(sides.front), b = worst(sides.back);
+  $("#cF").textContent = `${f.lr.join("/")} · ${f.tb.join("/")}`; $("#cB").textContent = `${b.lr.join("/")} · ${b.tb.join("/")}`;
+  return {lr:f.lr, tb:f.tb, blr:b.lr, btb:b.tb, front:f.w, back:b.w, bgsSub:capFrom(BGS_CENTER, f.w, b.w), backScanned: !!sides.back.photo || sides.back.touched, photoOk: sides.front.qc ? sides.front.qc.ok : null};
+}
+["#sl","#sr","#st","#sb"].forEach(s => $(s).addEventListener("input", () => { if(side==="back") sides.back.touched = true; readCentering(); }));
+
+// Drag the guide lines directly on the photo. Vertical lines move left/right, horizontal lines up/down.
+(() => {
+  const stage = $("#stage"); let drag = null;
+  const pos = e => { const r = stage.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width*100, y:(e.clientY-r.top)/r.height*100, r}; };
+  const clamp = v => Math.min(20, Math.max(1, Math.round(v*2)/2));
+  stage.addEventListener("pointerdown", e => {
+    const p = pos(e), d = sides[side];
+    const k = 63/88; // vertical % per horizontal % (the stage is a card-shaped box)
+    const cands = [ ["L", Math.abs(p.x - d.L), "#sl"], ["R", Math.abs(p.x - (100-d.R)), "#sr"],
+                    ["T", Math.abs(p.y - d.T*k) * k, "#st"], ["B", Math.abs(p.y - (100 - d.B*k)) * k, "#sb"] ];
+    cands.sort((a,b) => a[1]-b[1]);
+    const grabPx = cands[0][1] / 100 * p.r.width;
+    if(grabPx > 36) return;                       // not near any line
+    drag = {which:cands[0][0], slider:cands[0][2]};
+    stage.setPointerCapture(e.pointerId); stage.classList.add("grab");
+    $("#g"+drag.which).classList.add("drag");
+    e.preventDefault();
+  });
+  stage.addEventListener("pointermove", e => {
+    if(!drag) return; const p = pos(e), k = 63/88;
+    let v = drag.which==="L" ? p.x : drag.which==="R" ? 100-p.x : drag.which==="T" ? p.y/k : (100-p.y)/k;
+    $(drag.slider).value = clamp(v); if(side==="back") sides.back.touched = true; readCentering();
+  });
+  const end = e => { if(!drag) return; $("#g"+drag.which).classList.remove("drag"); stage.classList.remove("grab"); drag = null; };
+  stage.addEventListener("pointerup", end); stage.addEventListener("pointercancel", end);
+})();
+
+// Photo quality check: brightness, glare and sharpness from the pixels. This part is real.
+function checkPhoto(img){
+  const cv = document.createElement("canvas"), W = 160, H = Math.round(160*img.naturalHeight/img.naturalWidth) || 220;
+  cv.width = W; cv.height = H; const g = cv.getContext("2d"); g.drawImage(img, 0, 0, W, H);
+  const px = g.getImageData(0,0,W,H).data; let sum=0, glare=0, grad=0, n=W*H;
+  const lum = new Float32Array(n);
+  for(let i=0;i<n;i++){ const r=px[i*4],gg=px[i*4+1],b=px[i*4+2]; const l=0.299*r+0.587*gg+0.114*b; lum[i]=l; sum+=l; if(r>245&&gg>245&&b>245) glare++; }
+  for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){ const i=y*W+x; grad += Math.abs(lum[i+1]-lum[i-1]) + Math.abs(lum[i+W]-lum[i-W]); }
+  const mean = sum/n, glarePct = glare/n*100, sharp = grad/n;
+  const issues = [];
+  if(mean < 60) issues.push(["bad","Too dark","Average brightness is low. Move to a brighter spot or turn on a lamp; graders need to see corner tips and holo scratches."]);
+  if(mean > 215) issues.push(["warn","Overexposed","The photo is washed out. Back off the light so the border edges are crisp."]);
+  if(glarePct > 4) issues.push(["bad","Glare on the card",`${glarePct.toFixed(1)}% of the image is blown out white. Tilt the card or move the light; glare hides surface scratches and fakes edge whitening.`]);
+  if(sharp < 6) issues.push(["warn","Looks soft or blurry","Hold still, tap to focus on the card, and shoot in daylight. Corners cannot be judged from a blurry photo."]);
+  return issues.length ? {ok:false, level:issues[0][0], title:issues[0][1], text:issues.map(i=>i[2]).join(" ")}
+                       : {ok:true, level:"ok", title:"Photo looks good", text:`Brightness ${Math.round(mean)}/255, glare ${glarePct.toFixed(1)}%, sharpness ${sharp.toFixed(1)}. Clear enough to read corners and edges.`};
+}
+function showQC(q){ const el=$("#qc"); if(!q){ el.hidden=true; return; } el.hidden=false; el.className="qc "+q.level; el.innerHTML=`<div><b>${q.title}</b>${q.text}</div>`; }
+
+// =====================================================================
+// AUTO-BORDER. Finds the card in the photo, then finds where the colored
+// border meets the artwork on each side, and sets the sliders from that.
+// Works from the pixels, so it is real. Assumes the card is roughly square
+// to the camera on a plain background; the sliders stay editable after.
+// =====================================================================
+function detectBorders(img){
+  const W = 360, H = Math.max(60, Math.round(W * img.naturalHeight / img.naturalWidth));
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const g = cv.getContext("2d", {willReadFrequently:true}); g.drawImage(img, 0, 0, W, H);
+  const px = g.getImageData(0, 0, W, H).data;
+  const at = (x,y) => { const i = (y*W+x)*4; return [px[i], px[i+1], px[i+2]]; };
+  const dist = (a,b) => Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]) + Math.abs(a[2]-b[2]);
+  const avg = pts => { const s=[0,0,0]; pts.forEach(p=>{s[0]+=p[0];s[1]+=p[1];s[2]+=p[2]}); return s.map(v=>v/pts.length); };
+
+  // 1. Background color from the four image corners, then the card's outer rectangle
+  //    = the span of rows/columns that are mostly "not background".
+  const patch = (x0,y0) => { const a=[]; for(let y=y0;y<y0+8;y++) for(let x=x0;x<x0+8;x++) a.push(at(x,y)); return avg(a); };
+  const bg = avg([patch(0,0), patch(W-8,0), patch(0,H-8), patch(W-8,H-8)]);
+  const colFrac = new Float32Array(W), rowFrac = new Float32Array(H);
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){ if(dist(at(x,y), bg) > 70){ colFrac[x] += 1/H; rowFrac[y] += 1/W; } }
+  const span = (arr, n) => { let a=-1, b=-1; for(let i=0;i<n;i++){ if(arr[i]>0.5){ if(a<0) a=i; b=i; } } return [a,b]; };
+  let [x0,x1] = span(colFrac, W), [y0,y1] = span(rowFrac, H);
+  const fills = x0<=2 && x1>=W-3 && y0<=2 && y1>=H-3;      // card fills the frame (already cropped)
+  if(x0<0 || x1-x0 < W*0.35 || y1-y0 < H*0.35) return {ok:false, reason:"Couldn't separate the card from the background. Use a plain, contrasting surface (dark table for a yellow border) and keep the whole card in frame."};
+  const cw = x1-x0+1, ch = y1-y0+1;
+
+  // 2. Border color: average of a thin ring just inside the outer edge.
+  const ring = [];
+  const in1 = Math.max(2, Math.round(cw*0.015)), in2 = Math.max(in1+2, Math.round(cw*0.04));
+  for(let x=x0+in1; x<=x1-in1; x+=2){ for(let d=in1; d<in2; d++){ ring.push(at(x, y0+d)); ring.push(at(x, y1-d)); } }
+  for(let y=y0+in1; y<=y1-in1; y+=2){ for(let d=in1; d<in2; d++){ ring.push(at(x0+d, y)); ring.push(at(x1-d, y)); } }
+  const border = avg(ring);
+  if(dist(border, bg) < 60) return {ok:false, reason:"The border and the background are too close in color. Try a darker or lighter surface."};
+  const isB = p => dist(p, border) < 75;
+
+  // 3. Walk inward from each side along the middle of the card until the border color stops.
+  const walk = (len, sample) => {
+    let seen = false;
+    for(let d=0; d<len*0.3; d++){ const f = sample(d); if(f>0.5) seen = true; else if(seen && f<0.4) return d; }
+    return -1;
+  };
+  const midY = [Math.round(y0+ch*0.3), Math.round(y1-ch*0.3)], midX = [Math.round(x0+cw*0.3), Math.round(x1-cw*0.3)];
+  const fracCol = x => { let n=0,k=0; for(let y=midY[0]; y<=midY[1]; y+=2){ n++; if(isB(at(x,y))) k++; } return k/n; };
+  const fracRow = y => { let n=0,k=0; for(let x=midX[0]; x<=midX[1]; x+=2){ n++; if(isB(at(x,y))) k++; } return k/n; };
+  const L = walk(cw, d => fracCol(x0+d)), R = walk(cw, d => fracCol(x1-d));
+  const T = walk(ch, d => fracRow(y0+d)), B = walk(ch, d => fracRow(y1-d));
+  if([L,R,T,B].some(v => v<0)) return {ok:false, reason:"Found the card but not all four inner border edges. Glare or a sleeve usually causes this; the sliders are set to defaults, so line them up by hand."};
+  const pct = { L:+(L/cw*100).toFixed(1), R:+(R/cw*100).toFixed(1), T:+(T/ch*100).toFixed(1), B:+(B/ch*100).toFixed(1) };
+  if(Object.values(pct).some(v => v<0.8 || v>22)) return {ok:false, reason:"The border widths it found don't look like a card border. Check that the card is square to the camera and not in a sleeve."};
+
+  // 4. Crop the photo to the card at full resolution so the slider percentages map onto it exactly.
+  const sx = img.naturalWidth / W, sy = img.naturalHeight / H;
+  const out = document.createElement("canvas"); const ow = Math.min(900, Math.round(cw*sx)); const oh = Math.round(ow * (ch*sy)/(cw*sx));
+  out.width = ow; out.height = oh; out.getContext("2d").drawImage(img, x0*sx, y0*sy, cw*sx, ch*sy, 0, 0, ow, oh);
+  return {ok:true, pct, crop: fills ? null : out.toDataURL("image/jpeg", 0.88), fills};
+}
+
+$("#upload").addEventListener("change", e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader(); r.onload = () => {
+    const img = new Image(); img.onload = () => {
+      const d = sides[side]; d.orig = r.result; d.qc = checkPhoto(img);
+      let det = null; try { det = detectBorders(img); } catch(err){ det = {ok:false, reason:"Auto-align hit an error on this image."}; }
+      if(det.ok){
+        d.photo = det.crop || r.result; d.cropped = true;
+        const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2));
+        d.L = cl(det.pct.L); d.R = cl(det.pct.R); d.T = cl(det.pct.T); d.B = cl(det.pct.B);
+        d.auto = `Auto-aligned: borders measure L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}% of the card. Nudge any slider if a line looks off.`;
+      } else { d.photo = r.result; d.cropped = false; d.auto = det.reason; }
+      if(side==="back") sides.back.touched = true;
+      setSide(side);
+    };
+    img.src = r.result;
+  };
+  r.readAsDataURL(f); e.target.value = "";
+});
+$("#realign").addEventListener("click", () => {
+  const d = sides[side]; if(!d.orig) return;
+  const img = new Image(); img.onload = () => { const det = detectBorders(img);
+    if(det.ok){ d.photo = det.crop || d.orig; d.cropped = true; const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2)); d.L=cl(det.pct.L); d.R=cl(det.pct.R); d.T=cl(det.pct.T); d.B=cl(det.pct.B); d.auto = `Re-aligned: L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}%.`; }
+    else d.auto = det.reason;
+    setSide(side); };
+  img.src = d.orig;
+});
+
+// =====================================================================
+// CARD CATALOG. cards.json: [name, set, number, printedTotal, rarity, artist, releaseDate]
+// =====================================================================
+let CATALOG = [], ARTISTS = {};
+let selected = CARDS[0];
+fetch("cards.json").then(r => r.json()).then(rows => {
+  CATALOG = rows;
+  rows.forEach(r => { const a = ARTISTS[r[5]] ||= {n:0, first:"9999", last:"0000"}; a.n++; if(r[6] < a.first) a.first = r[6]; if(r[6] > a.last) a.last = r[6]; });
+  $("#cardQ").placeholder = `Search ${rows.length.toLocaleString("en-US")} cards…`;
+}).catch(() => { $("#cardQ").placeholder = "Catalog not loaded. Try the sample cards: Charizard, Umbreon, Pikachu, Mew"; });
+
+function search(q){
+  q = q.trim().toLowerCase(); if(q.length < 2) return [];
+  const terms = q.split(/\s+/);
+  const scored = [];
+  for(const r of CATALOG){
+    const h = `${r[0]} ${r[1]} ${r[2]} ${r[2]}/${r[3]}`.toLowerCase(); if(!terms.every(t => h.includes(t))) continue;
+    let s = 0; if(r[0].toLowerCase().startsWith(q)) s += 3; if(r[0].toLowerCase() === q) s += 5;
+    if(/rare|illustration|hyper|secret|rainbow|promo/i.test(r[4])) s += 1;
+    s += (+r[6].slice(0,4) || 0) / 10000;
+    scored.push([s, r]);
+  }
+  return scored.sort((a,b) => b[0]-a[0]).slice(0, 8).map(x => x[1]);
+}
+$("#cardQ").addEventListener("input", e => {
+  const hits = search(e.target.value);
+  $("#cardHits").innerHTML = hits.map((r,i) => `<button class="hit" role="option" data-hit="${i}"><b>${r[0]}</b><span class="no">${r[2]}${r[3]?"/"+r[3]:""}</span><small>${r[1]} · ${r[4] || "Rarity unknown"} · ${r[6].slice(0,4)}</small></button>`).join("");
+  $("#cardHits").dataset.hits = JSON.stringify(hits);
+});
+$("#cardHits").addEventListener("click", e => {
+  const b = e.target.closest("[data-hit]"); if(!b) return;
+  const r = JSON.parse($("#cardHits").dataset.hits)[+b.dataset.hit];
+  selected = fromCatalog(r);
+  $("#cardSel").className = "sel on"; $("#cardSel").innerHTML = `<b>${selected.name}</b> · ${selected.set}<small>${selected.rarity} · ${selected.artist || "artist not listed"} · ${selected.released}</small>`;
+  $("#cardHits").innerHTML = ""; $("#cardQ").value = "";
+});
+function fromCatalog(r){
+  const [name, set, num, total, rarity, artist, date, tcg] = r;
+  const known = CARDS.find(c => c.tcg === tcg);
+  if(known) return known;
+  const ra = rarity || "Unknown rarity";
+  const premium = /illustration|hyper|secret|rainbow|ultra|shiny|gold|VMAX|VSTAR|LEGEND|Prime|Star|LV\.X/i.test(ra);
+  const holo = premium || /holo/i.test(ra) || /\bex\b|GX|V$|VMAX|VSTAR/.test(name);
+  const year = +date.slice(0,4) || 2020, vintage = year <= 2003;
+  let h = 0; for(const ch of name+num+set) h = (h*31 + ch.charCodeAt(0)) >>> 0;
+  const pick = (arr, k) => arr[(h >> k) % arr.length];
+  const sub = vintage ? {corners:pick([7,8,8.5,9],2), edges:pick([8,8.5,9],5), surface:pick([8,8.5,9,9.5],8)}
+                      : {corners:pick([9,9.5,10,10],2), edges:pick([9,9.5,10],5), surface:pick([8.5,9,9.5,10],8)};
+  const tier = /special illustration|hyper|rainbow|secret/i.test(ra) ? 120 : /illustration|ultra|shiny|VMAX|VSTAR/i.test(ra) ? 45 : /holo|double|promo/i.test(ra) ? 12 : 2;
+  const raw = Math.round(tier * (vintage ? 3 : 1) * (0.7 + (h % 60)/100));
+  const a = ARTISTS[artist];
+  const fmtDate = d => { if(!d) return "Unknown"; const [y,m,dd] = d.split("/"); return new Date(y, m-1, dd).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"}); };
+  return {
+    id:"cat-"+h, tcg, name, set:`${set} · ${num}${total?"/"+total:""}`, rarity:ra, artist:artist || "Not listed", released:fmtDate(date)+" (English)",
+    raw, psa9: Math.round(raw*1.6), psa10: Math.round(raw*(premium?3.2:vintage?12:4.5)), bgs95: Math.round(raw*2.2), cgc10: Math.round(raw*2.6), sub,
+    history:`${name} is card ${num}${total?" of "+total:""} in ${set}, released ${fmtDate(date)}. It is listed as ${ra}${premium?", one of the set's premium pulls":holo?", a holofoil card":""}. ${vintage ? "Cards from this era were cut and printed with looser tolerances than modern sets, so well-centered, clean copies are scarce and graded values climb steeply at PSA 9 and 10." : "Modern print runs are large, so the graded value depends almost entirely on getting a 10; a 9 often sells for little more than a raw copy."} Prices shown are placeholders for the prototype.`,
+    artistNote: artist ? `${artist} is credited on ${a ? a.n.toLocaleString("en-US") : "a number of"} cards in this catalog${a ? `, from ${a.first.slice(0,4)} to ${a.last.slice(0,4)}` : ""}.` : "The dataset does not list an illustrator for this card.",
+    watch: /hyper|gold/i.test(ra) ? "Gold etched cards show hairline scratches under direct light and pick up fingerprints. Surface is the usual reason a gold card misses a 10." :
+      /special illustration|illustration/i.test(ra) ? "Textured illustration rares hide light scratches but show dents and holo peeling. Check the embossed areas under angled light, and look at the back edges for whitening." :
+      vintage ? "Vintage borders show every bit of edge wear, and many copies were off-center from the factory. Check back corners and look for surface scuffs from play." :
+      holo ? "Check the holofoil tilted under a lamp for print lines and scratches, and run a finger along the edges to feel for silvering." :
+      "Non-holo commons rarely justify grading fees. Check for surface scuffs, soft corners and edge whitening on the colored border.",
+  };
+}
+
+// =====================================================================
+// RESULT SCREEN
+// =====================================================================
+let last = null, showCo = "psa", calc = {co:"psa", tier:1, ship:12};
+$("#analyze").addEventListener("click", () => {
+  const c = selected, cen = readCentering();
+  if(!isPro) scansLeft = Math.max(0, scansLeft-1);
+  last = {c, cen, est: estimate(c, cen), photo: sides.front.photo};
+  showCo = "psa"; calc.co = "psa"; calc.tier = 1;
+  document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-result");
+  $("#s-result").innerHTML = `<div class="spin"><i></i>Checking centering, corners, edges and surface…</div>`;
+  $("#scansLeft").textContent = isPro ? "Pro · unlimited scans" : scansLeft + " free scans left today";
+  setTimeout(renderResult, 1100);
+});
+
+function centeringText(cen){
+  const [l,r]=cen.lr,[t,b]=cen.tb;
+  const axis = Math.max(l,r) >= Math.max(t,b) ? `left-to-right (${l}/${r})` : `top-to-bottom (${t}/${b})`;
+  const psaCap = capFrom(PSA_CENTER, cen.front, cen.back);
+  return `<b>How it was measured.</b> The border widths from your sliders give ${l}/${r} left to right and ${t}/${b} top to bottom on the front. Graders quote the worst axis, so this card is "${cen.front}/${100-cen.front}," on the ${axis} axis. The back measures ${cen.blr.join("/")} and ${cen.btb.join("/")}, so "${cen.back}/${100-cen.back}."${cen.backScanned ? "" : " <b>The back was not scanned</b>, so its default values were used; flip the card and scan it for a real number."}<br><br>
+  <b>What that means.</b> PSA allows 55/45 front for a 10, 60/40 for a 9, 65/35 for an 8 and 70/30 for a 7, with the back at 75/25 for a 10 and 90/10 for a 9. This card's centering alone would allow a PSA ${psaCap}. Beckett grades centering as its own subgrade with tighter limits (50/50 for a 10, 55/45 for a 9.5, 60/40 for a 9), which is why the centering bar shows ${cen.bgsSub}. CGC's limits match PSA for a 10 and Beckett for the grades below it.<br><br>
+  <b>Why centering is strict.</b> It is the one area a grader can measure rather than judge, so it has hard cutoffs. A card with flawless corners and surface still cannot be a PSA 10 at 60/40.`;
+}
+function stdTable(cen){
+  const row = (co, rows, on) => rows.map(([g,f,b]) => `<tr class="${g===on?'on':''}"><td>${co} ${g}</td><td>${f}/${100-f}</td><td>${b}/${100-b}</td></tr>`).join("");
+  return `<table class="std"><tr><th>Grade</th><th>Front</th><th>Back</th></tr>
+    ${row("PSA", PSA_CENTER, capFrom(PSA_CENTER,cen.front,cen.back))}${row("BGS", BGS_CENTER, cen.bgsSub)}${row("CGC", CGC_CENTER, capFrom(CGC_CENTER,cen.front,cen.back))}</table>
+    <p>Highlighted rows are the best grade this card's centering (${cen.front}/${100-cen.front} front, ${cen.back}/${100-cen.back} back) allows at each company. Beckett's rows are its centering subgrade, not the final grade.</p>`;
+}
+
+// Flaw map: where the problems are. Positions are sample placements keyed to the scores;
+// a real app would get them from the vision model's detections.
+function flawList(c, cen, est){
+  let h = 0; for(const ch of c.name) h = (h*31 + ch.charCodeAt(0)) >>> 0;
+  const corners = [[6,4,"top-left"],[94,4,"top-right"],[6,96,"bottom-left"],[94,96,"bottom-right"]];
+  const edges = [[50,2,"top edge"],[98,50,"right edge"],[50,98,"bottom edge"],[2,50,"left edge"]];
+  const out = [];
+  const nC = c.sub.corners>=10?0 : c.sub.corners>=9?1 : c.sub.corners>=8?2 : 3;
+  for(let i=0;i<nC;i++){ const k = corners[(h+i*3)%4]; out.push({x:k[0],y:k[1],t:"c",label:`${k[2]} corner: ${c.sub.corners>=9?"slight softness, visible only under magnification":"whitening on the tip, visible to the naked eye"}`}); }
+  const nE = c.sub.edges>=10?0 : c.sub.edges>=9?1 : 2;
+  for(let i=0;i<nE;i++){ const k = edges[(h+i)%4]; out.push({x:k[0],y:k[1],t:"c",label:`${k[2]}: ${c.sub.edges>=9?"pinpoint whitening from the factory cut":"whitening along the edge, visible on the border"}`}); }
+  if(c.sub.surface<10){ const sx = 25+(h%50), sy = 25+((h>>3)%45);
+    out.push({x:sx,y:sy,t:"",label:c.sub.surface>=9.5?"hairline scratch in the holo, shows only when tilted":c.sub.surface>=9?"short print line in the holofoil":c.sub.surface>=8.5?"print line across the holo, visible straight on":"scratches or a dent visible at arm's length"}); }
+  if(cen.front>55){ const [l,r]=cen.lr, [t,b]=cen.tb; const horiz = Math.max(l,r)>=Math.max(t,b);
+    out.push({x:horiz ? (l>r?92:8) : 50, y:horiz ? 50 : (t>b?92:8), t:"z", label:`centering: the ${horiz ? (l>r?"right":"left") : (t>b?"bottom":"top")} border is the narrow side (${cen.front}/${100-cen.front}), which caps PSA at ${capFrom(PSA_CENTER,cen.front,cen.back)}`}); }
+  return out;
+}
+
+function renderResult(){
+  if(!last) return;
+  const {c, cen, est, photo} = last;
+  const coWhy = showCo==="psa" ? est.psaWhy : showCo==="bgs" ? est.bgsWhy : est.cgcWhy;
+  const coName = showCo==="psa" ? `PSA ${est.psa}` : showCo==="bgs" ? `BGS ${est.bgs} ${est.bgsLabel}` : `CGC ${est.cgc} ${est.cgcLabel}`;
+  const flaws = flawList(c, cen, est);
+  const tiers = TIERS[calc.co], tier = tiers[Math.min(calc.tier, tiers.length-1)];
+  const ex = expected(c, est, calc.co, tier.fee, calc.ship);
+  const best = ex.rows.reduce((a,r)=>r.v>a.v?r:a, ex.rows[0]);
+  const verdict = ex.gain > 20 ? "yes" : ex.gain > -10 ? "maybe" : "no";
+  const sold = submissions.find(s => s.id===c.id && s.est===est.psa && s.actual===null);
+  $("#s-result").innerHTML = `
+    <div class="head">${thumb(c, "hero")}<div><span class="lbl">${c.set}</span><h2 style="margin-top:2px">${c.name}</h2><span class="fine">${c.rarity} · ${c.artist}</span></div></div>
+    <div class="grades">
+      <button class="slab" data-co="psa" aria-pressed="${showCo==='psa'}"><div class="co">PSA-STYLE</div><div class="gr">${est.psa}</div><div class="nm">${est.psa>=10?"Gem Mint":est.psa===9?"Mint":est.psa===8?"NM-MT":"Near Mint"}</div></button>
+      <button class="slab" data-co="bgs" aria-pressed="${showCo==='bgs'}"><div class="co">BGS-STYLE</div><div class="gr">${est.bgs}</div><div class="nm">${est.bgsLabel}</div></button>
+      <button class="slab" data-co="cgc" aria-pressed="${showCo==='cgc'}"><div class="co">CGC-STYLE</div><div class="gr">${est.cgc}</div><div class="nm">${est.cgcLabel}</div></button>
+    </div>
+    <div class="box"><span class="lbl">Why ${coName}</span><p>${coWhy}</p><p class="fine" style="margin:0">Tap a different slab above to see that company's reasoning.</p></div>
+
+    <div><span class="lbl">Odds by PSA grade · confidence ${est.conf}</span>
+      <div class="odds" style="margin-top:8px">${est.odds.map(([g,p]) => `<div class="${g===est.psa?'on':''}"><div class="ob"><i style="height:${Math.max(6,p*100)}%"></i></div><b>${Math.round(p*100)}%</b><span>PSA ${g}</span></div>`).join("")}</div>
+      <p class="fine" style="margin:8px 0 0">Most likely a ${est.psa}${est.odds.some(([g])=>g>est.psa)?`, with a ${Math.round(est.odds.find(([g])=>g>est.psa)[1]*100)}% shot at a ${est.psa+1}`:est.capped?`. A ${est.psa+1} is off the table because centering caps it`:""}. ${est.confWhy}</p></div>
+
+    <div><span class="lbl">Flaw map <span class="pro">PRO</span></span>
+      <div class="fmap" style="margin-top:8px">${photo ? `<img src="${photo}" alt="Your card with flaw markers">` : IMG[c.tcg] ? `<img src="${IMG[c.tcg]}" alt="${c.name} with flaw markers" style="object-fit:fill">` : `<div class="fake" style="position:absolute;inset:0"><div></div></div>`}
+        ${flaws.map((f,i) => `<button class="mk ${f.t}" style="left:${f.x}%;top:${f.y}%" data-mk="${i}" aria-label="Flaw ${i+1}">${i+1}</button>`).join("")}</div>
+      <div class="flaws" style="margin-top:8px">${flaws.length ? flaws.map((f,i) => `<div id="fl${i}"><span class="n ${f.t}">${i+1}</span><span>${f.label}</span></div>`).join("") : "<div><span></span><span>No flaws found at this resolution. Check under a loupe before submitting.</span></div>"}</div>
+      <p class="fine" style="margin:6px 0 0">Red: condition flaw. Orange: minor, under magnification. Blue: centering. ${photo ? "" : "Showing the stock card image since no photo was scanned. "}Marker positions are sample placements in this prototype.</p></div>
+
+    <div><span class="lbl">The four areas · tap to expand</span>
+    <div class="sub">${Object.entries(est.sub).map(([k,v]) =>
+      `<details><summary><div class="bar"><span>${k}</span><span class="tr"><i style="width:${v*10}%"></i></span><b>${v}</b></div></summary>
+       <p>${k==="Centering" ? centeringText(cen) : areaText(k,v)}</p></details>`).join("")}
+    <details><summary><b style="font-size:14px">Centering limits by company</b></summary>${stdTable(cen)}</details>
+    <details><summary><b style="font-size:14px">How sure is this estimate?</b></summary><p><b>${est.conf}.</b> ${est.confWhy}<br><br>Published tests of photo-based AI graders show exact-match rates with PSA of roughly 60 to 70 percent, and within one point most of the time. Treat this as a screen for which cards are worth the fee, not a promise of the grade.</p></details>
+    </div>
+
+    <div class="box"><span class="lbl">Watch for on this print</span><p>${c.watch}</p></div>
+
+    <div class="box"><span class="lbl">Submission calculator <span class="pro">PRO</span></span>
+      <div class="calc">
+        <div class="field"><label for="cCo">Company</label><select id="cCo">${Object.entries(COS).map(([k,v])=>`<option value="${k}" ${calc.co===k?"selected":""}>${v}</option>`).join("")}</select></div>
+        <div class="field"><label for="cTier">Service tier</label><select id="cTier">${tiers.map((t,i)=>`<option value="${i}" ${i===Math.min(calc.tier,tiers.length-1)?"selected":""}>${t.n}</option>`).join("")}</select></div>
+        <div class="field"><label for="cFee">Fee per card $</label><input type="number" id="cFee" value="${tier.fee}" min="0"></div>
+        <div class="field"><label for="cShip">Shipping both ways $</label><input type="number" id="cShip" value="${calc.ship}" min="0"></div>
+      </div>
+      <div class="ev"><span class="h">OUTCOME</span><span class="h">ODDS</span><span class="h">SELLS FOR</span>
+        ${ex.rows.map(r => `<span>${COS[calc.co]} ${r.g}</span><span>${Math.round(r.p*100)}%</span><span>${money(r.v)}</span>`).join("")}
+        <span><b>Expected value after fees</b></span><span></span><span><b>${money(ex.ev)}</b></span>
+        <span>Sell raw today</span><span></span><span>${money(c.raw)}</span></div>
+      <div class="verdict ${verdict}"><strong>${verdict==="yes" ? "Worth grading" : verdict==="maybe" ? "Coin flip" : "Not worth grading"}</strong>
+        ${verdict==="yes" ? `Grading is expected to make about ${money(ex.gain)} more than selling raw, after ${money(tier.fee)} in fees and ${money(calc.ship)} shipping, with roughly ${tier.days} days of waiting${tier.n.includes("paused")?" (this tier is currently paused at PSA)":""}.` :
+          verdict==="maybe" ? `Expected gain is ${ex.gain>=0?"+":"−"}${money(Math.abs(ex.gain))}, inside the noise. If it comes back a ${best.g} it sells for ${money(best.v)}; one grade lower and you barely cover the fee. Only worth it if you'd keep the slab anyway.` :
+          `You'd expect to lose about ${money(-ex.gain)} versus selling raw. Fees and ${tier.days} days of waiting eat the upside unless it hits a ${best.g} (${money(best.v)}), and the odds of that are ${Math.round(best.p*100)}%.`}</div>
+      <p class="fine" style="margin:0">Fees and turnaround are placeholders. Edit them to match the current price sheet; PSA paused its lower-cost tiers in 2026 during a backlog near 10 million cards.</p></div>
+
+    <div><span class="lbl">Recent sold prices (sample)</span>
+    <table class="px">
+      <tr><td>Raw / ungraded</td><td>${money(c.raw)}</td></tr>
+      <tr class="${est.psa===9?'hl':''}"><td>PSA 9</td><td>${money(c.psa9)}</td></tr>
+      <tr class="${est.psa>=10?'hl':''}"><td>PSA 10</td><td>${money(c.psa10)}</td></tr>
+      <tr><td>BGS 9.5</td><td>${money(c.bgs95)}</td></tr>
+      <tr><td>CGC 10</td><td>${money(c.cgc10)}</td></tr>
+    </table></div>
+
+    <div class="box"><span class="lbl">About this card</span>
+      <dl><dt>Rarity</dt><dd>${c.rarity}</dd><dt>Illustrator</dt><dd>${c.artist}</dd><dt>Released</dt><dd>${c.released}</dd></dl>
+      <h3>History</h3><p>${c.history}</p>
+      <h3>The artist</h3><p>${c.artistNote}</p></div>
+
+    <button class="btn" id="logSub" ${sold?"disabled":""}>${sold ? "Logged as submitted" : `Log submission to ${COS[calc.co]}`}</button>
+    <button class="btn ghost" id="addCol">Add to collection</button>
+    <button class="btn ghost" data-go="scan">Scan another</button>`;
+  document.querySelectorAll(".slab").forEach(b => b.addEventListener("click", () => { showCo = b.dataset.co; keepScroll(renderResult); }));
+  $("#cCo").addEventListener("change", e => { calc.co = e.target.value; calc.tier = 1; keepScroll(renderResult); });
+  $("#cTier").addEventListener("change", e => { calc.tier = +e.target.value; keepScroll(renderResult); });
+  $("#cFee").addEventListener("change", e => { TIERS[calc.co][Math.min(calc.tier, tiers.length-1)].fee = Math.max(0, +e.target.value||0); keepScroll(renderResult); });
+  $("#cShip").addEventListener("change", e => { calc.ship = Math.max(0, +e.target.value||0); keepScroll(renderResult); });
+  document.querySelectorAll("[data-mk]").forEach(m => m.addEventListener("click", () => { const el = $("#fl"+m.dataset.mk); el.scrollIntoView({block:"nearest"}); el.style.color="var(--accent)"; setTimeout(()=>el.style.color="",1200); }));
+  $("#logSub").addEventListener("click", e => { EXTRA[c.id] = c; submissions.unshift({id:c.id, co:calc.co, est:gradeFor(est,calc.co), actual:null, date:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}), tier:tier.n}); e.target.textContent = "Logged as submitted"; e.target.disabled = true; });
+  $("#addCol").addEventListener("click", e => { EXTRA[c.id] = c; collection.unshift({id:c.id, psa:est.psa}); e.target.textContent = "Added"; e.target.disabled = true; });
+}
+function keepScroll(fn){ const y = $("#s-result").scrollTop; fn(); $("#s-result").scrollTop = y; }
+
+// =====================================================================
+// BATCH MODE: a sample stack, sorted into grade / coin flip / skip.
+// =====================================================================
+$("#runBatch").addEventListener("click", () => {
+  const fee = Math.max(0, +$("#bFee").value||0), co = $("#bCo").value;
+  let pool = [];
+  if(CATALOG.length){ for(const id of BATCH_IDS){ const r = CATALOG.find(r => r[7]===id); if(r) pool.push(fromCatalog(r)); } }
+  while(pool.length<12) pool.push(CARDS[pool.length%4]);
+  pool = pool.slice(0,12);
+  const items = pool.map((c,i) => {
+    let h = 0; for(const ch of c.name+i) h = (h*31 + ch.charCodeAt(0)) >>> 0;
+    const front = 50 + (h%16), back = 52 + ((h>>4)%30);
+    const cen = {lr:[front,100-front], tb:[50,50], blr:[back,100-back], btb:[50,50], front, back, bgsSub:capFrom(BGS_CENTER,front,back), backScanned:true, photoOk:true};
+    const est = estimate(c, cen), ex = expected(c, est, co, fee, 1);
+    return {c, cen, est, ex, g:gradeFor(est,co)};
+  }).sort((a,b)=>b.ex.gain-a.ex.gain);
+  const buckets = [["Grade these", items.filter(i=>i.ex.gain>20), "g"], ["Coin flip", items.filter(i=>i.ex.gain<=20&&i.ex.gain>-10), "w"], ["Skip", items.filter(i=>i.ex.gain<=-10), "b"]];
+  const tot = items.filter(i=>i.ex.gain>20).reduce((a,i)=>a+i.ex.gain,0);
+  $("#batchOut").innerHTML = `<div class="total" style="margin-bottom:8px"><span class="lbl">Expected gain if you submit the top pile</span><strong>+${money(tot)}</strong></div>` +
+    buckets.map(([t,list,cls]) => `<div class="bucket"><h3>${t}<small>${list.length} card${list.length===1?"":"s"}</small></h3>${list.map((i,k) => `<button class="row" data-bi="${items.indexOf(i)}">${thumb(i.c)}<span class="nm">${i.c.name}<br><span class="st">${i.c.set}</span></span><span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ${cls}">${COS[co]} ~${i.g}</span><span class="money">${i.ex.gain>=0?"+":"−"}${money(Math.abs(i.ex.gain))}</span></span></button>`).join("") || `<p class="fine">Nothing here.</p>`}</div>`).join("");
+  $("#batchOut").dataset.items = "1"; window._batch = items;
+});
+document.addEventListener("click", e => {
+  const r = e.target.closest("[data-bi]"); if(!r) return;
+  const i = window._batch[+r.dataset.bi]; last = {c:i.c, cen:i.cen, est:i.est, photo:null}; showCo = "psa";
+  document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-result"); renderResult();
+});
+
+// =====================================================================
+// TRENDS. Five signals per card. search = 90-day change in Google Trends interest (%),
+// price = 30-day price change (%), pop = PSA 10 population growth over 90 days (%),
+// reprint = risk 0 (none, vintage) .. 3 (reprint confirmed), vintage = true/false.
+// Search and pop figures are SAMPLE numbers. Price notes marked "digest" come from the
+// Sunday Punch digest for the week ending Oct 14, 2026; the rest are sample numbers.
+// =====================================================================
+const TRENDS = [
+  {tcg:"base1-58", name:"Pikachu", set:"Base Set 58/102", search:+34, price:+6, pop:2, reprint:0, vintage:true,
+   note:"30th-anniversary coverage is pushing search for Base Set staples, and vintage sets led the gainers this week (digest). Supply of clean copies can't grow. A PSA 8 or 9 is the affordable way in; 10s are already priced for perfection."},
+  {tcg:"swsh7-215", name:"Umbreon VMAX", set:"Evolving Skies 215/203", search:+8, price:-3, pop:3, reprint:0, vintage:false,
+   note:"Never reprinted, attention steady, price drifting slightly with the rest of modern. Pop growth is slow because most raw copies have already been graded. Nothing here says sell; nothing says buy in a hurry either."},
+  {tcg:"swsh11-186", name:"Giratina V", set:"Lost Origin 186/196", search:+11, price:+3, pop:4, reprint:0, vintage:false,
+   note:"One of the few 2022 alt arts with interest rising while the price is flat. Lost Origin is out of print. The gap between attention and price is the setup this score looks for."},
+  {tcg:"swsh7-218", name:"Rayquaza VMAX", set:"Evolving Skies 218/203", search:+4, price:+2, pop:3, reprint:0, vintage:false,
+   note:"Quiet. Evolving Skies alt arts move together, and this one is tracking Umbreon at a lower price. Fine to hold, no reason to chase."},
+  {tcg:"swsh7-209", name:"Glaceon VMAX", set:"Evolving Skies 209/203", search:+2, price:+3, pop:3, reprint:0, vintage:false,
+   note:"Same story as Rayquaza. Eeveelution demand is durable, but the price already reflects it."},
+  {tcg:"swsh7-205", name:"Leafeon VMAX", set:"Evolving Skies 205/203", search:-1, price:0, pop:3, reprint:0, vintage:false,
+   note:"Flat on every signal. The cheapest Eeveelution alt art in the set, which is either a value play or a sign of where demand ranks it. Hold."},
+  {tcg:"swsh8-271", name:"Gengar VMAX", set:"Fusion Strike 271/264", search:0, price:-4, pop:5, reprint:0, vintage:false,
+   note:"Interest flat, price easing, pops still growing because Fusion Strike was printed heavily and raw copies keep surfacing. Wait for pop growth to slow before adding."},
+  {tcg:"sv3-223", name:"Charizard ex", set:"Obsidian Flames 223/197", search:+15, price:-6, pop:12, reprint:1, vintage:false,
+   note:"Attention is up on Charizard across the board, but this print's PSA 10 population is growing fast and Scarlet & Violet chase cards are pulling back (digest). Charizard always has a floor, but you're buying while supply is still arriving."},
+  {tcg:"swsh12-186", name:"Lugia V", set:"Silver Tempest 186/195", search:-5, price:-10, pop:4, reprint:0, vintage:false,
+   note:"Lugia fell 10.4% this week (digest) and search is fading. Could be a dip to buy later, but catching it now means guessing where the floor is."},
+  {tcg:"sv1-245", name:"Gardevoir ex", set:"Scarlet & Violet 245/198", search:-8, price:-5, pop:14, reprint:1, vintage:false,
+   note:"First SV set, printed in huge numbers, pops still climbing, and the base set gets reprinted in every product tie-in. Pretty card, poor scarcity story."},
+  {tcg:"sv3pt5-205", name:"Mew ex", set:"151 · 205/165", search:-12, price:-8, pop:9, reprint:3, vintage:false,
+   note:"151 has been reprinted repeatedly and the 30th Celebration added a new Mew ex to the market. Search is fading as the nostalgia wave moves on. Gold cards also grade poorly, so PSA 10 supply keeps coming from resubmissions."},
+  {tcg:"sv3pt5-150", name:"Mewtwo", set:"151 · 150/165", search:-10, price:-9, pop:6, reprint:3, vintage:false,
+   note:"A regular rare from a heavily reprinted set. There's no scarcity to invest in; buy it to play or collect, not to hold."},
+];
+function trendScore(t){
+  // Attention rising with a flat price is the ideal; a price that already ran gets penalized.
+  let s = 0.5*Math.max(-30, Math.min(30, t.search)) - 0.4*Math.max(-30, Math.min(30, t.price)) - 1.2*t.pop - 6*t.reprint + (t.vintage ? 8 : 0);
+  if(t.search >= 10 && t.price <= 5 && t.pop <= 6 && t.reprint === 0) s += 8;  // attention gap: interest rising before price, supply steady
+  if(t.search > 20 && t.price > 15) s -= 15;        // hype spike: attention and price both running
+  if(t.search < -5 && t.price < -5) s -= 6;           // fading on both: no catalyst
+  const v = s >= 7 ? "buy" : s >= -6 ? "hold" : "avoid";
+  return {s:Math.round(s), v};
+}
+let trendFilter = "all";
+document.querySelectorAll("[data-tf]").forEach(b => b.addEventListener("click", () => { trendFilter = b.dataset.tf; document.querySelectorAll("[data-tf]").forEach(q => q.setAttribute("aria-pressed", q===b)); renderTrends(); }));
+function renderTrends(){
+  const rows = TRENDS.map(t => ({t, ...trendScore(t)})).sort((a,b) => b.s-a.s).filter(r => trendFilter==="all" || r.v===trendFilter);
+  const chip = (label, v, inv) => { const cls = v===0 ? "" : ((v>0) !== !!inv) ? "up" : "dn"; return `<span class="${cls}">${label} ${v>0?"+":""}${v}%</span>`; };
+  $("#trendList").innerHTML = rows.map(({t,s,v}) => {
+    const c = CARDS.find(c => c.tcg===t.tcg) || {tcg:t.tcg, name:t.name};
+    return `<div class="trow">${thumb(c)}<div class="nm">${t.name}<br><span class="st">${t.set}</span></div><span class="vd ${v}">${v.toUpperCase()} · ${s}</span>
+      <div class="sig">${chip("search 90d", t.search)}${chip("price 30d", t.price)}${chip("pop 90d", t.pop, true)}<span class="${t.reprint>=2?"dn":t.reprint?"wn":""}">reprint ${["none","possible","likely","confirmed"][t.reprint]}</span>${t.vintage?`<span class="up">vintage</span>`:""}</div>
+      <p class="why">${t.note}</p></div>`;
+  }).join("") || `<p class="fine">No cards in this bucket.</p>`;
+}
+
+// =====================================================================
+// COLLECTION + SUBMISSION TRACKER
+// =====================================================================
+$("#colCards").addEventListener("click", () => { $("#colCards").setAttribute("aria-pressed",true); $("#colSubs").setAttribute("aria-pressed",false); $("#colPaneCards").hidden=false; $("#colPaneSubs").hidden=true; });
+$("#colSubs").addEventListener("click", () => { $("#colCards").setAttribute("aria-pressed",false); $("#colSubs").setAttribute("aria-pressed",true); $("#colPaneCards").hidden=true; $("#colPaneSubs").hidden=false; });
+function rowHTML(item){
+  const c = card(item.id);
+  return `<button class="row" data-open="${item.id}" data-psa="${item.psa}">${thumb(c)}
+    <span class="nm">${c.name}<br><span class="st">${c.set}</span></span>
+    <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ${item.psa>=10?'g':'w'}">PSA ~${item.psa}</span><span class="money">${money(c.raw)}</span></span></button>`;
+}
+function render(){
+  const tot = collection.reduce((a,i) => a + card(i.id).raw, 0);
+  $("#homeTotal").textContent = money(tot); $("#colTotal").textContent = money(tot);
+  $("#recent").innerHTML = collection.slice(0,3).map(rowHTML).join("");
+  $("#colList").innerHTML = collection.map(rowHTML).join("");
+  const back = submissions.filter(s => s.actual!==null);
+  const exact = back.filter(s => s.actual===s.est).length, within = back.filter(s => Math.abs(s.actual-s.est)<=1).length;
+  $("#subStats").innerHTML = `<div><strong>${submissions.length-back.length}</strong><span>pending</span></div><div><strong>${back.length?Math.round(exact/back.length*100):"–"}%</strong><span>exact match</span></div><div><strong>${back.length?Math.round(within/back.length*100):"–"}%</strong><span>within 1</span></div>`;
+  $("#subList").innerHTML = submissions.map((s,i) => { const c = card(s.id); const opts = [["", "Pending"],...[10,9.5,9,8.5,8,7,6].map(g=>[g,`${COS[s.co]} ${g}`])];
+    return `<div class="subrow"><span><b>${c.name}</b> · est. ${COS[s.co]} ${s.est}${s.actual!==null?` → got ${s.actual} <span class="pill ${s.actual>=s.est?'g':'b'}" style="padding:1px 6px">${s.actual===s.est?"match":s.actual>s.est?"under":"over"}</span>`:""}</span><small>${s.tier} · sent ${s.date}</small>
+      <select data-sub="${i}" aria-label="Actual grade">${opts.map(([v,l])=>`<option value="${v}" ${String(s.actual??"")===String(v)?"selected":""}>${l}</option>`).join("")}</select></div>`; }).join("");
+}
+document.addEventListener("change", e => { const s = e.target.closest("[data-sub]"); if(!s) return; submissions[+s.dataset.sub].actual = s.value==="" ? null : +s.value; render(); });
+document.addEventListener("click", e => {
+  const r = e.target.closest("[data-open]"); if(!r) return;
+  const c = card(r.dataset.open);
+  const cen = {lr:[52,48], tb:[51,49], blr:[53,47], btb:[52,48], front:52, back:53, bgsSub:9.5, backScanned:true, photoOk:true};
+  last = {c, cen, est:estimate(c, cen), photo:null}; showCo = "psa";
+  document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-result");
+  renderResult();
+});
+document.querySelectorAll(".plan").forEach(p => p.addEventListener("click", () => document.querySelectorAll(".plan").forEach(q => q.setAttribute("aria-pressed", q===p))));
+$("#subscribe").addEventListener("click", () => { isPro = true; scansLeft = 999; $("#scansLeft").textContent = "Pro · unlimited scans"; $("#subMsg").textContent = "Trial started (demo only, no payment taken)."; });
+
+setSide("front"); render(); renderTrends();
+</script>
+
+<script>
+if("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+</body>
+</html>
