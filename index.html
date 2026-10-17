@@ -86,12 +86,22 @@ img.hero.real{object-fit:cover;border:0;box-shadow:0 6px 18px -6px rgba(0,0,0,.4
 .seg button{border:0;border-radius:10px;padding:9px;font:700 14px var(--body);background:none;color:var(--muted);cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .stage{position:relative;width:100%;aspect-ratio:63/88;max-width:100%;border-radius:12px;overflow:hidden;background:var(--sunk);border:1px dashed var(--line)}
-.stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;background:#111}
 .fake{position:absolute;inset:0;padding:6% 8% 8% 5%;background:#f2d36b}
 .fake.back{background:#2e5aa8;padding:5% 6% 5% 6%}
 .fake div{width:100%;height:100%;border-radius:6px;background:var(--foil);display:flex;align-items:flex-end;padding:10px;font:700 12px var(--mono);color:#141a2b}
 .fake.back div{background:#1d3f7a;color:#cfe0ff;align-items:center;justify-content:center}
 .stage{touch-action:none;user-select:none;-webkit-user-select:none}
+.inner{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
+.inner img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;background:#111}
+.loupe{position:absolute;width:132px;height:132px;border-radius:50%;border:3px solid #fff;box-shadow:0 4px 16px rgba(0,0,0,.45);background-repeat:no-repeat;pointer-events:none;z-index:5;overflow:hidden;background-color:#111}
+.loupe i{position:absolute;background:var(--good);opacity:.95}
+.loupe.v i{left:50%;top:0;bottom:0;width:2px;margin-left:-1px}.loupe.h i{top:50%;left:0;right:0;height:2px;margin-top:-1px}
+.tools{display:flex;flex-direction:column;gap:8px;margin-top:-6px}
+.seg.zoom{grid-template-columns:repeat(3,1fr);max-width:220px}
+.rot{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}
+.rot label{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--muted)}
+.rot label b{color:var(--ink);font:700 13px var(--mono)}
+.ib{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--sunk);color:var(--ink);font-size:20px;cursor:pointer}
 .guide{position:absolute;background:var(--accent);opacity:.95;pointer-events:none}
 .guide.v{top:0;bottom:0;width:2px;margin-left:-1px}.guide.h{left:0;right:0;height:2px;margin-top:-1px}
 .guide::after{content:"";position:absolute;width:22px;height:22px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)}
@@ -229,12 +239,23 @@ code{font:600 12px var(--mono)}
       <div class="seg" role="tablist"><button id="sideF" aria-pressed="true">Front</button><button id="sideB" aria-pressed="false">Back <span class="pro">PRO</span></button></div>
       <p class="fine" style="margin:0" id="sideHint">Drag each slider until the blue line sits on the inner edge of the yellow border.</p>
       <div class="stage" id="stage">
-        <div class="fake" id="fake"><div>Sample card · front</div></div>
-        <img id="photo" alt="Your card photo" hidden>
-        <span class="guide v" id="gL"></span><span class="guide v" id="gR"></span>
-        <span class="guide h" id="gT"></span><span class="guide h" id="gB"></span>
+        <div class="inner" id="inner">
+          <div class="fake" id="fake"><div>Sample card · front</div></div>
+          <img id="photo" alt="Your card photo" hidden>
+          <span class="guide v" id="gL"></span><span class="guide v" id="gR"></span>
+          <span class="guide h" id="gT"></span><span class="guide h" id="gB"></span>
+        </div>
+        <div class="loupe" id="loupe" hidden><i></i></div>
       </div>
-      <p class="fine" style="margin:-8px 0 0">Drag a line by its handle, or use the sliders for fine control.</p>
+      <div class="tools">
+        <div class="seg zoom" role="group" aria-label="Zoom"><button data-zoom="1" aria-pressed="true">1×</button><button data-zoom="2" aria-pressed="false">2×</button><button data-zoom="4" aria-pressed="false">4×</button></div>
+        <div class="rot" id="rotBox" hidden>
+          <button class="ib" id="rotL" aria-label="Rotate 90° left">⟲</button>
+          <label for="rot">Straighten <b id="rotVal">0.0°</b><input type="range" id="rot" min="-15" max="15" step="0.1" value="0"></label>
+          <button class="ib" id="rotR" aria-label="Rotate 90° right">⟳</button>
+        </div>
+      </div>
+      <p class="fine" style="margin:-8px 0 0">Drag a line by its handle (a magnifier appears while you drag). Zoom in to check an edge; when zoomed, drag the photo to pan. Use the sliders for fine control.</p>
       <div class="sliders">
         <label for="sl">Left border<input type="range" id="sl" min="1" max="20" step="0.5" value="5"></label>
         <label for="sr">Right border<input type="range" id="sr" min="1" max="20" step="0.5" value="8"></label>
@@ -490,7 +511,7 @@ document.addEventListener("click", e => { const b = e.target.closest("[data-go]"
 // =====================================================================
 // SCAN SCREEN: front/back sides, sliders, photo upload with quality check.
 // =====================================================================
-const sides = { front:{L:5,R:8,T:6,B:8,photo:null,qc:null}, back:{L:6,R:7,T:6,B:7,photo:null,qc:null} };
+const sides = { front:{L:5,R:8,T:6,B:8,photo:null,qc:null,angle:0,fine:0}, back:{L:6,R:7,T:6,B:7,photo:null,qc:null,angle:0,fine:0} };
 let side = "front";
 function ratio(a,b){ const l = Math.round(a/(a+b)*100); return [l, 100-l]; }
 function worst(s){ const lr = ratio(s.L,s.R), tb = ratio(s.T,s.B); return {lr, tb, w:Math.max(...lr, ...tb)}; }
@@ -502,7 +523,9 @@ function setSide(s){
   $("#fake").hidden = !!d.photo; $("#photo").hidden = !d.photo; if(d.photo) $("#photo").src = d.photo;
   $("#photo").style.objectFit = d.cropped ? "fill" : "contain";
   $("#upBtn").textContent = d.photo ? `Replace the ${s} photo` : `Upload a ${s} photo`;
-  $("#realign").hidden = !d.orig;
+  $("#realign").hidden = !d.orig; $("#rotBox").hidden = !d.orig;
+  $("#rot").value = d.fine || 0; $("#rotVal").textContent = ((d.fine||0)>0?"+":"") + (d.fine||0).toFixed(1) + "°";
+  applyZoom();
   const au = $("#auto"); if(d.auto){ au.hidden = false; au.textContent = d.auto; } else au.hidden = true;
   $("#sideHint").textContent = s==="front" ? "Upload a photo and the app finds the borders itself. Then nudge any slider so the blue line sits on the inner edge of the yellow border." : "Flip the card and upload the back. The app finds the blue border; adjust if needed. PSA allows 75/25 here for a 10 and 90/10 for a 9.";
   showQC(d.qc); readCentering();
@@ -519,30 +542,59 @@ function readCentering(){
 }
 ["#sl","#sr","#st","#sb"].forEach(s => $(s).addEventListener("input", () => { if(side==="back") sides.back.touched = true; readCentering(); }));
 
-// Drag the guide lines directly on the photo. Vertical lines move left/right, horizontal lines up/down.
+// Drag the guide lines directly on the photo, zoom to check an edge, pan when zoomed, magnifier while dragging.
+let zoom = 1, pan = {x:0, y:0};
+function applyZoom(){
+  const st = $("#stage"), W = st.clientWidth, H = st.clientHeight;
+  pan.x = Math.min(0, Math.max(W - W*zoom, pan.x)); pan.y = Math.min(0, Math.max(H - H*zoom, pan.y));
+  $("#inner").style.transform = `translate(${pan.x}px,${pan.y}px) scale(${zoom})`;
+  document.querySelectorAll("[data-zoom]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.zoom === zoom));
+}
+document.querySelectorAll("[data-zoom]").forEach(b => b.addEventListener("click", () => {
+  const z = +b.dataset.zoom, st = $("#stage"), W = st.clientWidth, H = st.clientHeight;
+  // keep the center of the view in place when changing zoom
+  const cx = (W/2 - pan.x)/zoom, cy = (H/2 - pan.y)/zoom;
+  zoom = z; pan = {x: W/2 - cx*zoom, y: H/2 - cy*zoom}; applyZoom();
+}));
 (() => {
-  const stage = $("#stage"); let drag = null;
-  const pos = e => { const r = stage.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width*100, y:(e.clientY-r.top)/r.height*100, r}; };
+  const stage = $("#stage"), inner = $("#inner"), loupe = $("#loupe"); let drag = null, panning = null;
+  const pos = e => { const r = inner.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width*100, y:(e.clientY-r.top)/r.height*100, r}; };
   const clamp = v => Math.min(20, Math.max(1, Math.round(v*2)/2));
+  const k = 63/88; // vertical % per horizontal % (the stage is a card-shaped box)
+  function showLoupe(e, which){
+    const d = sides[side]; if(!d.photo){ loupe.hidden = true; return; }
+    const r = inner.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    const M = 3;                                   // magnification relative to the unzoomed photo
+    // point under the finger, in unzoomed stage pixels
+    const ux = (e.clientX - r.left)/zoom, uy = (e.clientY - r.top)/zoom, W = sr.width, H = sr.height;
+    loupe.style.backgroundImage = `url("${d.photo}")`;
+    loupe.style.backgroundSize = `${W*M}px ${H*M}px`;
+    loupe.style.backgroundPosition = `${66 - ux*M}px ${66 - uy*M}px`;
+    // place the loupe above the finger, flipping below near the top edge
+    let lx = e.clientX - sr.left - 66, ly = e.clientY - sr.top - 66 - 96;
+    if(ly < 0) ly = e.clientY - sr.top + 40;
+    lx = Math.max(0, Math.min(W-132, lx));
+    loupe.style.left = lx+"px"; loupe.style.top = ly+"px";
+    loupe.className = "loupe " + (which==="L"||which==="R" ? "v" : "h"); loupe.hidden = false;
+  }
   stage.addEventListener("pointerdown", e => {
     const p = pos(e), d = sides[side];
-    const k = 63/88; // vertical % per horizontal % (the stage is a card-shaped box)
     const cands = [ ["L", Math.abs(p.x - d.L), "#sl"], ["R", Math.abs(p.x - (100-d.R)), "#sr"],
                     ["T", Math.abs(p.y - d.T*k) * k, "#st"], ["B", Math.abs(p.y - (100 - d.B*k)) * k, "#sb"] ];
     cands.sort((a,b) => a[1]-b[1]);
-    const grabPx = cands[0][1] / 100 * p.r.width;
-    if(grabPx > 36) return;                       // not near any line
+    const grabPx = cands[0][1] / 100 * p.r.width;   // distance on screen, so it scales with zoom
+    stage.setPointerCapture(e.pointerId); e.preventDefault();
+    if(grabPx > 36){ if(zoom > 1) panning = {x:e.clientX - pan.x, y:e.clientY - pan.y}; return; }
     drag = {which:cands[0][0], slider:cands[0][2]};
-    stage.setPointerCapture(e.pointerId); stage.classList.add("grab");
-    $("#g"+drag.which).classList.add("drag");
-    e.preventDefault();
+    stage.classList.add("grab"); $("#g"+drag.which).classList.add("drag"); showLoupe(e, drag.which);
   });
   stage.addEventListener("pointermove", e => {
-    if(!drag) return; const p = pos(e), k = 63/88;
+    if(panning){ pan = {x:e.clientX - panning.x, y:e.clientY - panning.y}; applyZoom(); return; }
+    if(!drag) return; const p = pos(e);
     let v = drag.which==="L" ? p.x : drag.which==="R" ? 100-p.x : drag.which==="T" ? p.y/k : (100-p.y)/k;
-    $(drag.slider).value = clamp(v); if(side==="back") sides.back.touched = true; readCentering();
+    $(drag.slider).value = clamp(v); if(side==="back") sides.back.touched = true; readCentering(); showLoupe(e, drag.which);
   });
-  const end = e => { if(!drag) return; $("#g"+drag.which).classList.remove("drag"); stage.classList.remove("grab"); drag = null; };
+  const end = e => { if(drag){ $("#g"+drag.which).classList.remove("drag"); } drag = null; panning = null; stage.classList.remove("grab"); loupe.hidden = true; };
   stage.addEventListener("pointerup", end); stage.addEventListener("pointercancel", end);
 })();
 
@@ -664,33 +716,96 @@ function detectBorders(img){
   return {ok:true, pct, conf, noise:+noise.toFixed(2), crop: fills ? null : out.toDataURL("image/jpeg", 0.88), fills, res:RW};
 }
 
+// Estimate how many degrees the card is tilted, from the slope of its left and right outer edges.
+function estimateSkew(img){
+  const W = 480, H = Math.max(60, Math.round(W * img.naturalHeight / img.naturalWidth));
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const g = cv.getContext("2d", {willReadFrequently:true}); g.drawImage(img, 0, 0, W, H);
+  const px = g.getImageData(0, 0, W, H).data;
+  const at = (x,y) => { const i = (y*W+x)*4; return [px[i], px[i+1], px[i+2]]; };
+  const dist = (a,b) => Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]) + Math.abs(a[2]-b[2]);
+  const avg = pts => { const s=[0,0,0]; pts.forEach(p=>{s[0]+=p[0];s[1]+=p[1];s[2]+=p[2]}); return s.map(v=>v/pts.length); };
+  const patch = (x0,y0) => { const a=[]; for(let y=y0;y<y0+6;y++) for(let x=x0;x<x0+6;x++) a.push(at(x,y)); return avg(a); };
+  const bg = avg([patch(0,0), patch(W-6,0), patch(0,H-6), patch(W-6,H-6)]);
+  const rowFrac = new Float32Array(H); for(let y=0;y<H;y++) for(let x=0;x<W;x+=2){ if(dist(at(x,y), bg) > 70) rowFrac[y] += 2/W; }
+  let y0=-1, y1=-1; for(let y=0;y<H;y++){ if(rowFrac[y]>0.4){ if(y0<0) y0=y; y1=y; } }
+  if(y0<0 || y1-y0 < H*0.3) return 0;
+  // first/last non-background x at many rows in the middle 60% of the card's height
+  const left = [], right = [];
+  for(let y=Math.round(y0+(y1-y0)*0.2); y<=y1-(y1-y0)*0.2; y+=4){
+    let a=-1,b=-1; for(let x=0;x<W;x++){ if(dist(at(x,y), bg) > 70){ if(a<0) a=x; b=x; } }
+    if(a>=0){ left.push([y,a]); right.push([y,b]); }
+  }
+  const slope = pts => { const n=pts.length; if(n<6) return null; let sx=0,sy=0,sxy=0,sxx=0; for(const [y,x] of pts){ sx+=x; sy+=y; sxy+=x*y; sxx+=y*y; } const d = n*sxx - sy*sy; return d ? (n*sxy - sy*sx)/d : null; };
+  const sl = slope(left), sr = slope(right);
+  const slopes = [sl, sr].filter(v => v!==null && Math.abs(v) < 0.5);
+  if(!slopes.length) return 0;
+  const m = slopes.reduce((a,b)=>a+b,0)/slopes.length;       // dx per dy
+  return +(Math.atan(m) * 180/Math.PI).toFixed(2);
+}
+// Draw the original photo rotated by `deg` onto a canvas big enough to hold it, padded with the background color.
+function rotated(img, deg, cb){
+  const rad = deg*Math.PI/180, cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+  const w = img.naturalWidth, h = img.naturalHeight, maxW = 2000, k = Math.min(1, maxW / Math.max(w, h));
+  const W = Math.round((w*cos + h*sin)*k), H = Math.round((w*sin + h*cos)*k);
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const g = cv.getContext("2d");
+  // pad color = average of the photo's corners, so the detector still sees a plain background
+  const t = document.createElement("canvas"); t.width = 8; t.height = 8; const tg = t.getContext("2d");
+  tg.drawImage(img, 0, 0, w, h, 0, 0, 8, 8); const d = tg.getImageData(0,0,8,8).data;
+  const c = [0,0,0]; [[0,0],[7,0],[0,7],[7,7]].forEach(([x,y]) => { const i=(y*8+x)*4; c[0]+=d[i]/4; c[1]+=d[i+1]/4; c[2]+=d[i+2]/4; });
+  g.fillStyle = `rgb(${c.map(Math.round).join(",")})`; g.fillRect(0,0,W,H);
+  g.translate(W/2, H/2); g.rotate(rad); g.scale(k, k); g.drawImage(img, -w/2, -h/2);
+  const out = new Image(); out.onload = () => cb(out); out.src = cv.toDataURL("image/jpeg", 0.92);
+}
+// Run detection on the current side's photo at its current rotation and update the sliders.
+function alignSide(d, msgPrefix){
+  const src = new Image(); src.onload = () => {
+    const go = (img) => {
+      let det = null; try { det = detectBorders(img); } catch(err){ det = {ok:false, reason:"Auto-align hit an error on this image."}; }
+      if(det.ok){
+        d.photo = det.crop || img.src; d.cropped = true;
+        const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2));
+        d.L = cl(det.pct.L); d.R = cl(det.pct.R); d.T = cl(det.pct.T); d.B = cl(det.pct.B);
+        d.auto = `${msgPrefix} (${det.conf} confidence${d.angle ? `, straightened ${d.angle>0?"+":""}${d.angle.toFixed(1)}°` : ""}): L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}% of the card${det.conf!=="high"?". Scan lines disagreed by ±"+det.noise+"%, so zoom in and check the lines":". Zoom in to check, nudge a line if it looks off"}.`;
+      } else { d.photo = img.src; d.cropped = false; d.auto = det.reason + (d.angle ? ` (rotation ${d.angle.toFixed(1)}° applied)` : ""); }
+      zoom = 1; pan = {x:0,y:0}; setSide(side);
+    };
+    if(Math.abs(d.angle) < 0.05) go(src); else rotated(src, d.angle, go);
+  };
+  src.src = d.orig;
+}
 $("#upload").addEventListener("change", e => {
   const f = e.target.files[0]; if(!f) return;
   const r = new FileReader(); r.onload = () => {
     const img = new Image(); img.onload = () => {
       const d = sides[side]; d.orig = r.result; d.qc = checkPhoto(img);
-      let det = null; try { det = detectBorders(img); } catch(err){ det = {ok:false, reason:"Auto-align hit an error on this image."}; }
-      if(det.ok){
-        d.photo = det.crop || r.result; d.cropped = true;
-        const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2));
-        d.L = cl(det.pct.L); d.R = cl(det.pct.R); d.T = cl(det.pct.T); d.B = cl(det.pct.B);
-        d.auto = `Auto-aligned (${det.conf} confidence, measured at ${det.res}px): L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}% of the card${det.conf!=="high"?". Scan lines disagreed by ±"+det.noise+"%, so check the lines against the photo":". Nudge a line if it looks off"}.`;
-      } else { d.photo = r.result; d.cropped = false; d.auto = det.reason; }
+      // landscape photo of a portrait card: turn it upright first
+      let base = img.naturalWidth > img.naturalHeight * 1.15 ? 90 : 0;
+      const skew = estimateSkew(img);
+      d.angle = base + (Math.abs(skew) >= 0.3 && Math.abs(skew) <= 15 ? skew : 0);
+      d.angle = +d.angle.toFixed(1);
       if(side==="back") sides.back.touched = true;
-      setSide(side);
+      d.fine = 0;
+      alignSide(d, d.angle ? "Auto-straightened and aligned" : "Auto-aligned");
     };
     img.src = r.result;
   };
   r.readAsDataURL(f); e.target.value = "";
 });
-$("#realign").addEventListener("click", () => {
+$("#realign").addEventListener("click", () => { const d = sides[side]; if(!d.orig) return; alignSide(d, "Re-aligned"); });
+// Manual rotation: the slider is a fine adjustment on top of the auto angle; the buttons add 90°.
+let rotTimer = null;
+$("#rot").addEventListener("input", e => {
   const d = sides[side]; if(!d.orig) return;
-  const img = new Image(); img.onload = () => { const det = detectBorders(img);
-    if(det.ok){ d.photo = det.crop || d.orig; d.cropped = true; const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2)); d.L=cl(det.pct.L); d.R=cl(det.pct.R); d.T=cl(det.pct.T); d.B=cl(det.pct.B); d.auto = `Re-aligned (${det.conf} confidence): L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}%.`; }
-    else d.auto = det.reason;
-    setSide(side); };
-  img.src = d.orig;
+  const fine = +e.target.value; $("#rotVal").textContent = (fine>0?"+":"") + fine.toFixed(1) + "°";
+  d.angle = +((d.base ?? d.angle - (d.fine||0)) + fine).toFixed(1); d.base = d.angle - fine; d.fine = fine;
+  clearTimeout(rotTimer); rotTimer = setTimeout(() => alignSide(d, "Rotated and re-aligned"), 350);
 });
+["rotL","rotR"].forEach((id, i) => $("#"+id).addEventListener("click", () => {
+  const d = sides[side]; if(!d.orig) return;
+  d.angle = +(d.angle + (i ? 90 : -90)).toFixed(1); d.base = (d.base ?? d.angle) + (i ? 90 : -90);
+  alignSide(d, "Rotated and re-aligned");
+}));
 
 // =====================================================================
 // CARD CATALOG. cards.json: [name, set, number, printedTotal, rarity, artist, releaseDate]
