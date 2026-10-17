@@ -10,7 +10,7 @@ Scan a Pokémon card and see its estimated PSA, BGS and CGC grade, the odds of e
 |---|---|
 | Card catalog (20,635 English cards, through Sept 2026) | Real, from the open [Pokémon TCG dataset](https://github.com/PokemonTCG/pokemon-tcg-data) |
 | Card images | Real for 12 bundled cards; placeholder for the rest |
-| Centering measurement, auto border detection, photo quality check | Real, computed from the photo's pixels |
+| Centering measurement, auto border detection (full-resolution, edge-based, median of ~300 scan lines per side), photo quality check | Real, computed from the photo's pixels |
 | Centering limits per grading company | Real, from each company's published scale |
 | Corners / edges / surface scores | Sample numbers (a vision model goes here in phase 2) |
 | Prices | Sample numbers (sold-listing data goes here in phase 2) |

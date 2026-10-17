@@ -572,6 +572,7 @@ function showQC(q){ const el=$("#qc"); if(!q){ el.hidden=true; return; } el.hidd
 // to the camera on a plain background; the sliders stay editable after.
 // =====================================================================
 function detectBorders(img){
+  // ---- Pass 1: coarse. Find the card's outer rectangle on a small copy. ----
   const W = 360, H = Math.max(60, Math.round(W * img.naturalHeight / img.naturalWidth));
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const g = cv.getContext("2d", {willReadFrequently:true}); g.drawImage(img, 0, 0, W, H);
@@ -579,48 +580,88 @@ function detectBorders(img){
   const at = (x,y) => { const i = (y*W+x)*4; return [px[i], px[i+1], px[i+2]]; };
   const dist = (a,b) => Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]) + Math.abs(a[2]-b[2]);
   const avg = pts => { const s=[0,0,0]; pts.forEach(p=>{s[0]+=p[0];s[1]+=p[1];s[2]+=p[2]}); return s.map(v=>v/pts.length); };
-
-  // 1. Background color from the four image corners, then the card's outer rectangle
-  //    = the span of rows/columns that are mostly "not background".
   const patch = (x0,y0) => { const a=[]; for(let y=y0;y<y0+8;y++) for(let x=x0;x<x0+8;x++) a.push(at(x,y)); return avg(a); };
   const bg = avg([patch(0,0), patch(W-8,0), patch(0,H-8), patch(W-8,H-8)]);
   const colFrac = new Float32Array(W), rowFrac = new Float32Array(H);
   for(let y=0;y<H;y++) for(let x=0;x<W;x++){ if(dist(at(x,y), bg) > 70){ colFrac[x] += 1/H; rowFrac[y] += 1/W; } }
   const span = (arr, n) => { let a=-1, b=-1; for(let i=0;i<n;i++){ if(arr[i]>0.5){ if(a<0) a=i; b=i; } } return [a,b]; };
-  let [x0,x1] = span(colFrac, W), [y0,y1] = span(rowFrac, H);
-  const fills = x0<=2 && x1>=W-3 && y0<=2 && y1>=H-3;      // card fills the frame (already cropped)
-  if(x0<0 || x1-x0 < W*0.35 || y1-y0 < H*0.35) return {ok:false, reason:"Couldn't separate the card from the background. Use a plain, contrasting surface (dark table for a yellow border) and keep the whole card in frame."};
-  const cw = x1-x0+1, ch = y1-y0+1;
+  let [cx0,cx1] = span(colFrac, W), [cy0,cy1] = span(rowFrac, H);
+  if(cx0<0 || cx1-cx0 < W*0.35 || cy1-cy0 < H*0.35) return {ok:false, reason:"Couldn't separate the card from the background. Use a plain, contrasting surface (dark table for a yellow border) and keep the whole card in frame."};
+  const fills = cx0<=2 && cx1>=W-3 && cy0<=2 && cy1>=H-3;
 
-  // 2. Border color: average of a thin ring just inside the outer edge.
-  const ring = [];
-  const in1 = Math.max(2, Math.round(cw*0.015)), in2 = Math.max(in1+2, Math.round(cw*0.04));
-  for(let x=x0+in1; x<=x1-in1; x+=2){ for(let d=in1; d<in2; d++){ ring.push(at(x, y0+d)); ring.push(at(x, y1-d)); } }
-  for(let y=y0+in1; y<=y1-in1; y+=2){ for(let d=in1; d<in2; d++){ ring.push(at(x0+d, y)); ring.push(at(x1-d, y)); } }
+  // ---- Pass 2: fine. Re-measure on a high-resolution copy (up to 1400 px wide). ----
+  const RW = Math.min(1400, img.naturalWidth), k = RW / img.naturalWidth, RH = Math.round(img.naturalHeight * k);
+  const cv2 = document.createElement("canvas"); cv2.width = RW; cv2.height = RH;
+  const g2 = cv2.getContext("2d", {willReadFrequently:true}); g2.drawImage(img, 0, 0, RW, RH);
+  const P = g2.getImageData(0, 0, RW, RH).data;
+  const AT = (x,y) => { const i = (y*RW+x)*4; return [P[i], P[i+1], P[i+2]]; };
+  const sx = RW / W, sy = RH / H;
+  // Refine the outer edge: scan a window around the coarse edge, using the middle 60% of the other axis.
+  const refine = (coarse, dir, vertical) => {
+    const len = vertical ? RW : RH, win = Math.round(len * 0.03);
+    const lo = Math.max(0, Math.round(coarse) - win), hi = Math.min(len-1, Math.round(coarse) + win);
+    const bandA = vertical ? Math.round(cy0*sy + (cy1-cy0)*sy*0.2) : Math.round(cx0*sx + (cx1-cx0)*sx*0.2);
+    const bandB = vertical ? Math.round(cy1*sy - (cy1-cy0)*sy*0.2) : Math.round(cx1*sx - (cx1-cx0)*sx*0.2);
+    const frac = i => { let n=0,m=0; for(let j=bandA;j<=bandB;j+=3){ n++; if(dist(vertical ? AT(i,j) : AT(j,i), bg) > 70) m++; } return m/n; };
+    if(dir > 0){ for(let i=lo;i<=hi;i++) if(frac(i) > 0.5) return i; return Math.round(coarse); }
+    for(let i=hi;i>=lo;i--) if(frac(i) > 0.5) return i; return Math.round(coarse);
+  };
+  const X0 = refine(cx0*sx, +1, true), X1 = refine(cx1*sx, -1, true);
+  const Y0 = refine(cy0*sy, +1, false), Y1 = refine(cy1*sy, -1, false);
+  const cw = X1-X0+1, ch = Y1-Y0+1;
+  if(cw < 200) return {ok:false, reason:"The card is too small in the photo to measure accurately. Fill most of the frame with it."};
+
+  // Border color from a thin ring just inside the outer edge.
+  const ring = []; const in1 = Math.max(2, Math.round(cw*0.012)), in2 = Math.max(in1+3, Math.round(cw*0.035));
+  for(let x=X0+in2; x<=X1-in2; x+=4){ for(let d=in1; d<in2; d+=2){ ring.push(AT(x, Y0+d)); ring.push(AT(x, Y1-d)); } }
+  for(let y=Y0+in2; y<=Y1-in2; y+=4){ for(let d=in1; d<in2; d+=2){ ring.push(AT(X0+d, y)); ring.push(AT(X1-d, y)); } }
   const border = avg(ring);
   if(dist(border, bg) < 60) return {ok:false, reason:"The border and the background are too close in color. Try a darker or lighter surface."};
-  const isB = p => dist(p, border) < 75;
 
-  // 3. Walk inward from each side along the middle of the card until the border color stops.
-  const walk = (len, sample) => {
-    let seen = false;
-    for(let d=0; d<len*0.3; d++){ const f = sample(d); if(f>0.5) seen = true; else if(seen && f<0.4) return d; }
+  // For one scan line: walk inward from the outer edge and find where the border color stops.
+  // Returns the sub-pixel distance from the outer edge, or -1.
+  const walkLine = (sample, len) => {
+    const maxD = Math.round(len*0.28), minD = Math.max(3, Math.round(len*0.008));
+    const d = new Float32Array(maxD); let peak = 0;
+    for(let i=0;i<maxD;i++){ d[i] = dist(sample(i), border); if(i>=minD && d[i]>peak) peak = d[i]; }
+    // Baseline = how the border itself reads on this line (mean and spread of the first few samples).
+    const n0 = Math.min(8, maxD-minD); let base = 0, sq = 0;
+    for(let i=minD;i<minD+n0;i++){ base += d[i]; } base /= n0;
+    for(let i=minD;i<minD+n0;i++){ sq += (d[i]-base)*(d[i]-base); } const sd = Math.sqrt(sq/n0);
+    const T = base + Math.max(40, 4*sd);                                       // keyed to the border's noise, not the art's contrast
+    if(peak - base < 40) return -1;                                           // no transition on this line
+    for(let i=minD+1;i<maxD-2;i++){
+      if(d[i] > T && d[i+1] > T && d[i+2] > T){ const f = (T - d[i-1]) / Math.max(1e-6, d[i] - d[i-1]); return i-1 + Math.max(0, Math.min(1, f)); }
+    }
     return -1;
   };
-  const midY = [Math.round(y0+ch*0.3), Math.round(y1-ch*0.3)], midX = [Math.round(x0+cw*0.3), Math.round(x1-cw*0.3)];
-  const fracCol = x => { let n=0,k=0; for(let y=midY[0]; y<=midY[1]; y+=2){ n++; if(isB(at(x,y))) k++; } return k/n; };
-  const fracRow = y => { let n=0,k=0; for(let x=midX[0]; x<=midX[1]; x+=2){ n++; if(isB(at(x,y))) k++; } return k/n; };
-  const L = walk(cw, d => fracCol(x0+d)), R = walk(cw, d => fracCol(x1-d));
-  const T = walk(ch, d => fracRow(y0+d)), B = walk(ch, d => fracRow(y1-d));
-  if([L,R,T,B].some(v => v<0)) return {ok:false, reason:"Found the card but not all four inner border edges. Glare or a sleeve usually causes this; the sliders are set to defaults, so line them up by hand."};
-  const pct = { L:+(L/cw*100).toFixed(1), R:+(R/cw*100).toFixed(1), T:+(T/ch*100).toFixed(1), B:+(B/ch*100).toFixed(1) };
+  const median = a => { if(!a.length) return -1; const s=[...a].sort((x,y)=>x-y); const m=s.length>>1; return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
+  const spread = a => { if(a.length<4) return 99; const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length*0.75)] - s[Math.floor(s.length*0.25)]; };
+  // Sample the middle 70% of each side, one line every 3 px. The median ignores lines where artwork touches the border.
+  const side = (vertical, fromStart) => {
+    const vals = [];
+    const a = vertical ? Y0 + ch*0.15 : X0 + cw*0.15, b = vertical ? Y1 - ch*0.15 : X1 - cw*0.15;
+    for(let j=Math.round(a); j<=b; j+=3){
+      const v = walkLine(i => vertical ? AT(fromStart ? X0+i : X1-i, j) : AT(j, fromStart ? Y0+i : Y1-i), vertical ? cw : ch);
+      if(v>=0) vals.push(v);
+    }
+    return {v:median(vals), n:vals.length, iqr:spread(vals)};
+  };
+  const L = side(true, true), R = side(true, false), T = side(false, true), B = side(false, false);
+  const sides = {L, R, T, B};
+  const missing = Object.entries(sides).filter(([,s]) => s.v < 0 || s.n < 10).map(([k]) => ({L:"left",R:"right",T:"top",B:"bottom"})[k]);
+  if(missing.length) return {ok:false, reason:`Found the card but not the inner edge on the ${missing.join(", ")} side${missing.length>1?"s":""}. Glare, a sleeve or a dark border edge usually causes this; line that side up by hand.`};
+  const pct = { L:+(L.v/cw*100).toFixed(2), R:+(R.v/cw*100).toFixed(2), T:+(T.v/ch*100).toFixed(2), B:+(B.v/ch*100).toFixed(2) };
   if(Object.values(pct).some(v => v<0.8 || v>22)) return {ok:false, reason:"The border widths it found don't look like a card border. Check that the card is square to the camera and not in a sleeve."};
+  // Confidence: how much the scan lines disagreed, as a percentage of the card width.
+  const noise = Math.max(L.iqr/cw, R.iqr/cw, T.iqr/ch, B.iqr/ch) * 100;
+  const conf = noise < 0.4 ? "high" : noise < 1 ? "medium" : "low";
 
-  // 4. Crop the photo to the card at full resolution so the slider percentages map onto it exactly.
-  const sx = img.naturalWidth / W, sy = img.naturalHeight / H;
-  const out = document.createElement("canvas"); const ow = Math.min(900, Math.round(cw*sx)); const oh = Math.round(ow * (ch*sy)/(cw*sx));
-  out.width = ow; out.height = oh; out.getContext("2d").drawImage(img, x0*sx, y0*sy, cw*sx, ch*sy, 0, 0, ow, oh);
-  return {ok:true, pct, crop: fills ? null : out.toDataURL("image/jpeg", 0.88), fills};
+  // Crop to the card at full resolution so the slider percentages map onto it exactly.
+  const fx = img.naturalWidth / RW, fy = img.naturalHeight / RH;
+  const out = document.createElement("canvas"); const ow = Math.min(900, Math.round(cw*fx)); const oh = Math.round(ow * (ch*fy)/(cw*fx));
+  out.width = ow; out.height = oh; out.getContext("2d").drawImage(img, X0*fx, Y0*fy, cw*fx, ch*fy, 0, 0, ow, oh);
+  return {ok:true, pct, conf, noise:+noise.toFixed(2), crop: fills ? null : out.toDataURL("image/jpeg", 0.88), fills, res:RW};
 }
 
 $("#upload").addEventListener("change", e => {
@@ -633,7 +674,7 @@ $("#upload").addEventListener("change", e => {
         d.photo = det.crop || r.result; d.cropped = true;
         const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2));
         d.L = cl(det.pct.L); d.R = cl(det.pct.R); d.T = cl(det.pct.T); d.B = cl(det.pct.B);
-        d.auto = `Auto-aligned: borders measure L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}% of the card. Nudge any slider if a line looks off.`;
+        d.auto = `Auto-aligned (${det.conf} confidence, measured at ${det.res}px): L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}% of the card${det.conf!=="high"?". Scan lines disagreed by ±"+det.noise+"%, so check the lines against the photo":". Nudge a line if it looks off"}.`;
       } else { d.photo = r.result; d.cropped = false; d.auto = det.reason; }
       if(side==="back") sides.back.touched = true;
       setSide(side);
@@ -645,7 +686,7 @@ $("#upload").addEventListener("change", e => {
 $("#realign").addEventListener("click", () => {
   const d = sides[side]; if(!d.orig) return;
   const img = new Image(); img.onload = () => { const det = detectBorders(img);
-    if(det.ok){ d.photo = det.crop || d.orig; d.cropped = true; const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2)); d.L=cl(det.pct.L); d.R=cl(det.pct.R); d.T=cl(det.pct.T); d.B=cl(det.pct.B); d.auto = `Re-aligned: L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}%.`; }
+    if(det.ok){ d.photo = det.crop || d.orig; d.cropped = true; const cl = v => Math.min(20, Math.max(1, Math.round(v*2)/2)); d.L=cl(det.pct.L); d.R=cl(det.pct.R); d.T=cl(det.pct.T); d.B=cl(det.pct.B); d.auto = `Re-aligned (${det.conf} confidence): L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}%.`; }
     else d.auto = det.reason;
     setSide(side); };
   img.src = d.orig;
