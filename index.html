@@ -897,28 +897,34 @@ async function identifyCard(photo){
     for(const t of strips) for(const m of t.matchAll(/(\d{1,4})\s*[\/|]\s*(\d{2,4})/g)){
       let n = m[1], tot = m[2];
       const tots = [tot, tot.slice(0,-1), tot.slice(1)].filter(x => x.length>=2 && TOTALS.has(x));   // "1965" -> "196"
-      const nums = [n, n.slice(1), n.slice(0,-1)].filter(x => x.length>=1 && +x>0);
-      for(const T of tots) for(const N of nums){ const key = +N+"/"+T; seen.set(key, (seen.get(key)||0) + (N===n && T===tot ? 2 : 1)); }
+      // A 4-digit read is a 3-digit number with one stray character: try dropping each one.
+      let nums = n.length===4 ? [...new Set([0,1,2,3].map(i => n.slice(0,i)+n.slice(i+1)))] : [n];
+      if(n.length===3) nums = nums.concat([n.slice(1), n.slice(0,-1)]);
+      nums = nums.filter(x => x.length>=1 && +x>0);
+      for(const T of tots) for(const N of nums){ const key = +N+"/"+T; seen.set(key, (seen.get(key)||0) + (N===n && T===tot ? 3 : 1)); }
     }
-    // Name from the top strip, left of the HP.
-    const nameTxt = await read(0.04,0.025,0.70,0.085,"7",2);
-    const words = nameTxt.replace(/[^A-Za-z' ]/g," ").split(/\s+/).filter(w => w.length >= 3).map(w => w.toLowerCase());
-    const nameScore = r => { const n = r[0].toLowerCase(); let sc = 0; for(const w of words){ if(n.includes(w)) sc += w.length; } return sc; };
+    // Name: several crops of the top strip, in single-word and single-line modes, joined into one noisy string.
+    const nameReads = [await read(0.08,0.035,0.55,0.06,"8",3), await read(0.04,0.025,0.70,0.085,"7",2), await read(0.10,0.03,0.5,0.07,"8",3)];
+    const noisy = nameReads.join(" ").toLowerCase().replace(/[^a-z]/g,"");
+    // Score a catalog name by its longest word that appears inside the noisy string (e.g. "giratina" in "jgiratinalze").
+    const nameScore = r => { let sc = 0; for(const w of r[0].toLowerCase().replace(/[^a-z ]/g," ").split(" ")){ if(w.length>=4 && noisy.includes(w)) sc = Math.max(sc, w.length); } return sc; };
+    const words = [...new Set(CATALOG.map(r => r[0].toLowerCase().split(/\s+/)[0]).filter(w => w.length>=4 && noisy.includes(w)))].slice(0,3);
     let cands = [];
-    for(const [key, votes] of [...seen.entries()].sort((a,b) => b[1]-a[1])){
+    const byVotes = [...seen.entries()].sort((a,b) => b[1]-a[1]);
+    for(const [key] of byVotes){
       const [N,T] = key.split("/");
-      const rows = CATALOG.filter(r => r[2].replace(/^0+/,"") === N && String(r[3]) === T);
-      rows.forEach(r => { if(!cands.some(c => c[7]===r[7])) cands.push(r); });
+      CATALOG.filter(r => r[2].replace(/^0+/,"") === N && String(r[3]) === T).forEach(r => { if(!cands.some(c => c[7]===r[7])) cands.push({r, votes:seen.get(key)}); });
     }
-    cands.sort((a,b) => nameScore(b) - nameScore(a));
+    cands.sort((a,b) => nameScore(b.r) - nameScore(a.r) || b.votes - a.votes);
+    cands = cands.map(c => c.r);
     if(!cands.length && words.length){
       cands = CATALOG.map(r => [nameScore(r), r]).filter(x => x[0] >= 4).sort((a,b) => b[0]-a[0] || (b[1][6] > a[1][6] ? 1 : -1)).map(x => x[1]);
     }
     cands = cands.slice(0, 4);
-    const best = [...seen.entries()].sort((a,b) => b[1]-a[1])[0];
+    const best = byVotes[0];
     if(!cands.length){ st.textContent = `Couldn't match it${best ? ` (read "${best[0]}")` : ""}${words.length ? `, name looked like "${words.join(" ")}"` : ""}. Search below instead, or retake with the bottom of the card sharp and in focus.`; return; }
     hits.innerHTML = cands.map((r,i) => hitHTML(r,i,"data-id")).join(""); hits.dataset.hits = JSON.stringify(cands);
-    const sure = cands.length === 1 || nameScore(cands[0]) >= 4;
+    const sure = (cands.length === 1 && best && best[1] >= 3) || nameScore(cands[0]) >= 4;
     if(sure){ chooseCard(cands[0]); st.textContent = `Picked ${cands[0][0]} · ${cands[0][1]} ${cands[0][2]}/${cands[0][3]}${best ? ` (read "${best[0]}")` : ""}. Tap another if that's wrong.`; }
     else st.textContent = `Read "${best ? best[0] : "?"}"${words.length ? ` and "${words.join(" ")}"` : ""}. Tap the right one:`;
   } catch(e){ st.textContent = "The card reader hit an error on this photo. Search below instead."; }
