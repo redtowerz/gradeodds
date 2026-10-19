@@ -888,34 +888,42 @@ async function identifyCard(photo){
   let worker; try { worker = await loadOCR(); } catch(e){ st.textContent = "Card reader needs the live site (the preview blocks its download). Search below instead."; return; }
   const img = new Image(); await new Promise(r => { img.onload = r; img.src = photo; });
   try {
-    // Bottom strip: modern cards print "123/197" bottom-left; older cards bottom-right. Read the whole strip.
-    await worker.setParameters({tessedit_char_whitelist:"0123456789/ ", tessedit_pageseg_mode:"7"});
-    const bottom = ocrCrop(img, 0, 0.90, 1, 0.08, 2.5);
-    const num = (await worker.recognize(bottom)).data.text;
-    // Top strip: the card name, left of the HP.
-    await worker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.- ", tessedit_pageseg_mode:"7"});
-    const top = ocrCrop(img, 0.04, 0.025, 0.70, 0.085, 2);
-    const nameTxt = (await worker.recognize(top)).data.text;
-    const m = num.match(/(\d{1,3})\s*\/\s*(\d{2,3})/);
+    const TOTALS = window._totals ||= new Set(CATALOG.map(r => String(r[3])).filter(Boolean));
+    const read = async (fx,fy,fw,fh,psm,scale) => { await worker.setParameters({tessedit_char_whitelist:"", tessedit_pageseg_mode:psm}); return (await worker.recognize(ocrCrop(img,fx,fy,fw,fh,scale))).data.text; };
+    // Number: modern cards print it bottom-left, vintage bottom-right. Read both halves as single lines, plus the whole strip as sparse text.
+    const strips = [await read(0,0.915,0.55,0.075,"7",3), await read(0.45,0.915,0.55,0.075,"7",3), await read(0,0.88,1,0.12,"11",3)];
+    // Every "digits/digits" the OCR produced, then clean each one against the catalog's known set sizes.
+    const seen = new Map();
+    for(const t of strips) for(const m of t.matchAll(/(\d{1,4})\s*[\/|]\s*(\d{2,4})/g)){
+      let n = m[1], tot = m[2];
+      const tots = [tot, tot.slice(0,-1), tot.slice(1)].filter(x => x.length>=2 && TOTALS.has(x));   // "1965" -> "196"
+      const nums = [n, n.slice(1), n.slice(0,-1)].filter(x => x.length>=1 && +x>0);
+      for(const T of tots) for(const N of nums){ const key = +N+"/"+T; seen.set(key, (seen.get(key)||0) + (N===n && T===tot ? 2 : 1)); }
+    }
+    // Name from the top strip, left of the HP.
+    const nameTxt = await read(0.04,0.025,0.70,0.085,"7",2);
     const words = nameTxt.replace(/[^A-Za-z' ]/g," ").split(/\s+/).filter(w => w.length >= 3).map(w => w.toLowerCase());
     const nameScore = r => { const n = r[0].toLowerCase(); let sc = 0; for(const w of words){ if(n.includes(w)) sc += w.length; } return sc; };
     let cands = [];
-    if(m){
-      const n = String(+m[1]), t = m[2];
-      cands = CATALOG.filter(r => r[2].replace(/^0+/,"") === n && String(r[3]) === t);
-      if(!cands.length) cands = CATALOG.filter(r => r[2].replace(/^0+/,"") === n);   // total misread; fall back to number only
-      cands.sort((a,b) => nameScore(b) - nameScore(a) || (b[6] > a[6] ? 1 : -1));
+    for(const [key, votes] of [...seen.entries()].sort((a,b) => b[1]-a[1])){
+      const [N,T] = key.split("/");
+      const rows = CATALOG.filter(r => r[2].replace(/^0+/,"") === N && String(r[3]) === T);
+      rows.forEach(r => { if(!cands.some(c => c[7]===r[7])) cands.push(r); });
     }
+    cands.sort((a,b) => nameScore(b) - nameScore(a));
     if(!cands.length && words.length){
-      cands = CATALOG.map(r => [nameScore(r), r]).filter(x => x[0] >= 4).sort((a,b) => b[0]-a[0]).map(x => x[1]);
+      cands = CATALOG.map(r => [nameScore(r), r]).filter(x => x[0] >= 4).sort((a,b) => b[0]-a[0] || (b[1][6] > a[1][6] ? 1 : -1)).map(x => x[1]);
     }
     cands = cands.slice(0, 4);
-    if(!cands.length){ st.textContent = `Couldn't read it (saw "${num.trim() || "no number"}"${words.length ? `, name "${words.join(" ")}"` : ""}). Search below instead, or retake with the bottom of the card sharp.`; return; }
-    st.textContent = `Read ${m ? `"${m[1]}/${m[2]}"` : "the name"}${words.length ? ` and "${words.join(" ")}"` : ""}. Tap the right one:`;
+    const best = [...seen.entries()].sort((a,b) => b[1]-a[1])[0];
+    if(!cands.length){ st.textContent = `Couldn't match it${best ? ` (read "${best[0]}")` : ""}${words.length ? `, name looked like "${words.join(" ")}"` : ""}. Search below instead, or retake with the bottom of the card sharp and in focus.`; return; }
     hits.innerHTML = cands.map((r,i) => hitHTML(r,i,"data-id")).join(""); hits.dataset.hits = JSON.stringify(cands);
-    if(cands.length === 1 || (m && cands.length && nameScore(cands[0]) >= 4)){ chooseCard(cands[0]); st.textContent = `Picked ${cands[0][0]} · ${cands[0][1]} ${cands[0][2]}/${cands[0][3]}. Tap another if that's wrong.`; }
+    const sure = cands.length === 1 || nameScore(cands[0]) >= 4;
+    if(sure){ chooseCard(cands[0]); st.textContent = `Picked ${cands[0][0]} · ${cands[0][1]} ${cands[0][2]}/${cands[0][3]}${best ? ` (read "${best[0]}")` : ""}. Tap another if that's wrong.`; }
+    else st.textContent = `Read "${best ? best[0] : "?"}"${words.length ? ` and "${words.join(" ")}"` : ""}. Tap the right one:`;
   } catch(e){ st.textContent = "The card reader hit an error on this photo. Search below instead."; }
 }
+
 function fromCatalog(r){
   const [name, set, num, total, rarity, artist, date, tcg] = r;
   const known = CARDS.find(c => c.tcg === tcg);
