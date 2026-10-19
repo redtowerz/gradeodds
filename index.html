@@ -270,6 +270,7 @@ code{font:600 12px var(--mono)}
         <div><span class="lbl">Front L/R · T/B</span><strong id="cF">38/62 · 43/57</strong></div>
         <div><span class="lbl">Back L/R · T/B</span><strong id="cB">46/54 · 46/54</strong></div>
       </div>
+      <div class="box" id="idBox" hidden><span class="lbl">Looks like…</span><div id="idStatus" class="fine"></div><div id="idHits" class="hits"></div></div>
       <div class="field"><label for="cardQ">Which card is this? Search by name, set or number</label>
         <input id="cardQ" type="search" placeholder="e.g. Charizard 223, Umbreon VMAX, Base Set Pikachu" autocomplete="off">
         <div id="cardHits" class="hits" role="listbox" aria-label="Matching cards"></div>
@@ -769,6 +770,7 @@ function alignSide(d, msgPrefix){
         d.auto = `${msgPrefix} (${det.conf} confidence${d.angle ? `, straightened ${d.angle>0?"+":""}${d.angle.toFixed(1)}°` : ""}): L ${det.pct.L}% · R ${det.pct.R}% · T ${det.pct.T}% · B ${det.pct.B}% of the card${det.conf!=="high"?". Scan lines disagreed by ±"+det.noise+"%, so zoom in and check the lines":". Zoom in to check, nudge a line if it looks off"}.`;
       } else { d.photo = img.src; d.cropped = false; d.auto = det.reason + (d.angle ? ` (rotation ${d.angle.toFixed(1)}° applied)` : ""); }
       zoom = 1; pan = {x:0,y:0}; setSide(side);
+      if(det.ok && side==="front") identifyCard(d.photo);
     };
     if(Math.abs(d.angle) < 0.05) go(src); else rotated(src, d.angle, go);
   };
@@ -836,13 +838,84 @@ $("#cardQ").addEventListener("input", e => {
   $("#cardHits").innerHTML = hits.map((r,i) => `<button class="hit" role="option" data-hit="${i}"><b>${r[0]}</b><span class="no">${r[2]}${r[3]?"/"+r[3]:""}</span><small>${r[1]} · ${r[4] || "Rarity unknown"} · ${r[6].slice(0,4)}</small></button>`).join("");
   $("#cardHits").dataset.hits = JSON.stringify(hits);
 });
-$("#cardHits").addEventListener("click", e => {
-  const b = e.target.closest("[data-hit]"); if(!b) return;
-  const r = JSON.parse($("#cardHits").dataset.hits)[+b.dataset.hit];
+function chooseCard(r){
   selected = fromCatalog(r);
   $("#cardSel").className = "sel on"; $("#cardSel").innerHTML = `<b>${selected.name}</b> · ${selected.set}<small>${selected.rarity} · ${selected.artist || "artist not listed"} · ${selected.released}</small>`;
   $("#cardHits").innerHTML = ""; $("#cardQ").value = "";
+}
+const hitHTML = (r,i,attr) => `<button class="hit" role="option" ${attr}="${i}"><b>${r[0]}</b><span class="no">${r[2]}${r[3]?"/"+r[3]:""}</span><small>${r[1]} · ${r[4] || "Rarity unknown"} · ${r[6].slice(0,4)}</small></button>`;
+$("#cardHits").addEventListener("click", e => {
+  const b = e.target.closest("[data-hit]"); if(!b) return;
+  chooseCard(JSON.parse($("#cardHits").dataset.hits)[+b.dataset.hit]);
 });
+$("#idHits").addEventListener("click", e => {
+  const b = e.target.closest("[data-id]"); if(!b) return;
+  chooseCard(JSON.parse($("#idHits").dataset.hits)[+b.dataset.id]);
+  $("#idStatus").textContent = "Picked. Change it below if that's wrong.";
+});
+
+// =====================================================================
+// CARD IDENTIFICATION. Reads the set number at the bottom of the card and the
+// name at the top with on-device OCR (Tesseract.js, free), then matches the catalog.
+// The OCR engine downloads its language data from a CDN the first time, so this
+// works on the live site; inside the claude.ai preview that download is blocked.
+// =====================================================================
+let ocrWorker = null, ocrLoading = null;
+function loadOCR(){
+  if(ocrWorker) return Promise.resolve(ocrWorker);
+  if(ocrLoading) return ocrLoading;
+  ocrLoading = new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+    sc.onload = async () => { try { ocrWorker = await Tesseract.createWorker("eng", 1); res(ocrWorker); } catch(e){ rej(e); } };
+    sc.onerror = () => rej(new Error("ocr script blocked")); document.head.appendChild(sc);
+  });
+  return ocrLoading;
+}
+// Crop a region of the card (fractions of width/height), upscale and sharpen contrast for OCR.
+function ocrCrop(img, fx, fy, fw, fh, scale){
+  const cv = document.createElement("canvas"); const w = Math.round(img.naturalWidth*fw*scale), h = Math.round(img.naturalHeight*fh*scale);
+  cv.width = w; cv.height = h; const g = cv.getContext("2d");
+  g.drawImage(img, img.naturalWidth*fx, img.naturalHeight*fy, img.naturalWidth*fw, img.naturalHeight*fh, 0, 0, w, h);
+  const id = g.getImageData(0,0,w,h), d = id.data; let mn=255, mx=0;
+  for(let i=0;i<d.length;i+=4){ const l = 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; d[i]=d[i+1]=d[i+2]=l; if(l<mn) mn=l; if(l>mx) mx=l; }
+  const r = Math.max(1, mx-mn); for(let i=0;i<d.length;i+=4){ const v = (d[i]-mn)/r*255; d[i]=d[i+1]=d[i+2]=v; }
+  g.putImageData(id,0,0); return cv;
+}
+async function identifyCard(photo){
+  const box = $("#idBox"), st = $("#idStatus"), hits = $("#idHits");
+  box.hidden = false; hits.innerHTML = ""; st.textContent = "Reading the card number and name…";
+  if(!CATALOG.length){ st.textContent = "Catalog still loading; try again in a moment."; return; }
+  let worker; try { worker = await loadOCR(); } catch(e){ st.textContent = "Card reader needs the live site (the preview blocks its download). Search below instead."; return; }
+  const img = new Image(); await new Promise(r => { img.onload = r; img.src = photo; });
+  try {
+    // Bottom strip: modern cards print "123/197" bottom-left; older cards bottom-right. Read the whole strip.
+    await worker.setParameters({tessedit_char_whitelist:"0123456789/ ", tessedit_pageseg_mode:"7"});
+    const bottom = ocrCrop(img, 0, 0.90, 1, 0.08, 2.5);
+    const num = (await worker.recognize(bottom)).data.text;
+    // Top strip: the card name, left of the HP.
+    await worker.setParameters({tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.- ", tessedit_pageseg_mode:"7"});
+    const top = ocrCrop(img, 0.04, 0.025, 0.70, 0.085, 2);
+    const nameTxt = (await worker.recognize(top)).data.text;
+    const m = num.match(/(\d{1,3})\s*\/\s*(\d{2,3})/);
+    const words = nameTxt.replace(/[^A-Za-z' ]/g," ").split(/\s+/).filter(w => w.length >= 3).map(w => w.toLowerCase());
+    const nameScore = r => { const n = r[0].toLowerCase(); let sc = 0; for(const w of words){ if(n.includes(w)) sc += w.length; } return sc; };
+    let cands = [];
+    if(m){
+      const n = String(+m[1]), t = m[2];
+      cands = CATALOG.filter(r => r[2].replace(/^0+/,"") === n && String(r[3]) === t);
+      if(!cands.length) cands = CATALOG.filter(r => r[2].replace(/^0+/,"") === n);   // total misread; fall back to number only
+      cands.sort((a,b) => nameScore(b) - nameScore(a) || (b[6] > a[6] ? 1 : -1));
+    }
+    if(!cands.length && words.length){
+      cands = CATALOG.map(r => [nameScore(r), r]).filter(x => x[0] >= 4).sort((a,b) => b[0]-a[0]).map(x => x[1]);
+    }
+    cands = cands.slice(0, 4);
+    if(!cands.length){ st.textContent = `Couldn't read it (saw "${num.trim() || "no number"}"${words.length ? `, name "${words.join(" ")}"` : ""}). Search below instead, or retake with the bottom of the card sharp.`; return; }
+    st.textContent = `Read ${m ? `"${m[1]}/${m[2]}"` : "the name"}${words.length ? ` and "${words.join(" ")}"` : ""}. Tap the right one:`;
+    hits.innerHTML = cands.map((r,i) => hitHTML(r,i,"data-id")).join(""); hits.dataset.hits = JSON.stringify(cands);
+    if(cands.length === 1 || (m && cands.length && nameScore(cands[0]) >= 4)){ chooseCard(cands[0]); st.textContent = `Picked ${cands[0][0]} · ${cands[0][1]} ${cands[0][2]}/${cands[0][3]}. Tap another if that's wrong.`; }
+  } catch(e){ st.textContent = "The card reader hit an error on this photo. Search below instead."; }
+}
 function fromCatalog(r){
   const [name, set, num, total, rarity, artist, date, tcg] = r;
   const known = CARDS.find(c => c.tcg === tcg);
